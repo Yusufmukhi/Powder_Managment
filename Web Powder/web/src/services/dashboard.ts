@@ -150,7 +150,7 @@ export async function loadUsageByPowder(
       year: "numeric"
     }),
     supplier: row.suppliers?.[0]?.supplier_name ?? "—",
-client: row.clients?.client_name ?? "—",
+client: row.clients?.[0]?.client_name ?? "—",
 
     qty: Number(row.quantity_kg),
     cost: Number(row.total_cost)

@@ -130,36 +130,55 @@
     // ------------------------------------------------
     // LOAD USAGE TABLE
     // ------------------------------------------------
-    const refreshUsage = async () => {
-      const { data } = await supabase
-        .from("usage")
-        .select(`
-          id,
-          quantity_kg,
-          total_cost,
-          used_at,
-          powder:powders ( powder_name ),
-         supplier: suppliers ( supplier_name ),
-          client: clients ( client_name )
-        `)
-        .eq("company_id", session.companyId)
-        .order("used_at", { ascending: false })
+   const refreshUsage = async () => {
+  const { data } = await supabase
+    .from("usage")
+    .select(`
+      id,
+      used_at,
+      quantity_kg,
+      total_cost,
+      powder_id,
+      supplier_id,
+      client_id
+    `)
+    .eq("company_id", session.companyId)
+    .order("used_at", { ascending: false })
 
-      if (!data) return
+  if (!data) return
 
-      setUsageRows(
-        data.map(u => ({
-          id: u.id,
-          used_at: new Date(u.used_at).toLocaleString(),
-          powder: u.powder?.[0]?.powder_name ?? "",
-supplier: u.supplier?.[0]?.supplier_name ?? "",
-client: u.client?.[0]?.client_name ?? "",
+  // Load lookup maps
+  const [powdersRes, suppliersRes, clientsRes] = await Promise.all([
+    supabase.from("powders").select("id, powder_name"),
+    supabase.from("suppliers").select("id, supplier_name"),
+    supabase.from("clients").select("id, client_name")
+  ])
 
-          qty: u.quantity_kg,
-          cost: u.total_cost
-        }))
-      )
-    }
+  const powderMap = new Map(
+    powdersRes.data?.map(p => [p.id, p.powder_name])
+  )
+
+  const supplierMap = new Map(
+    suppliersRes.data?.map(s => [s.id, s.supplier_name])
+  )
+
+  const clientMap = new Map(
+    clientsRes.data?.map(c => [c.id, c.client_name])
+  )
+
+  setUsageRows(
+    data.map(u => ({
+      id: u.id,
+      used_at: new Date(u.used_at).toLocaleString(),
+      powder: powderMap.get(u.powder_id) ?? "—",
+      supplier: supplierMap.get(u.supplier_id) ?? "—",
+      client: clientMap.get(u.client_id) ?? "—",
+      qty: u.quantity_kg,
+      cost: u.total_cost
+    }))
+  )
+}
+
 
     // ------------------------------------------------
     // FIFO APPLY (USED BY ADD + EDIT)
