@@ -151,9 +151,10 @@
         data.map(u => ({
           id: u.id,
           used_at: new Date(u.used_at).toLocaleString(),
-          powder: u.powders?.[0]?.powder_name ?? "",
-supplier: u.suppliers?.[0]?.supplier_name ?? "",
-client: u.clients?.[0]?.client_name ?? "",
+          powder: u.powders?.powder_name ?? "",
+supplier: u.suppliers?.supplier_name ?? "",
+client: u.clients?.client_name ?? "",
+
           qty: u.quantity_kg,
           cost: u.total_cost
         }))
