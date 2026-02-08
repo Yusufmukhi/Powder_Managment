@@ -28,8 +28,10 @@ export default function SearchSelect({
   const itemRefs = useRef<(HTMLDivElement | null)[]>([])
 
   const filtered = options.filter(o =>
-    o.label.toLowerCase().includes(query.toLowerCase())
+    o?.label?.toLowerCase().includes(query.toLowerCase())
   )
+  
+
 
   // --------------------------------
   // CLOSE ON OUTSIDE CLICK
