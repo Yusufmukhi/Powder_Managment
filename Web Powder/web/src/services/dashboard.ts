@@ -36,11 +36,11 @@ export async function loadInventoryGrouped(companyId: string) {
   const { data } = await supabase
     .from("stock_batches")
     .select(`
-      qty_remaining,
-      rate_per_kg,
-      powder: powders ( powder_name )
+  qty_remaining,
+  rate_per_kg,
+  powder: powders ( powder_name )
+`)
 
-    `)
     .eq("company_id", companyId)
     .gt("qty_remaining", 0)
 
@@ -50,7 +50,8 @@ export async function loadInventoryGrouped(companyId: string) {
   > = {}
 
   data?.forEach(row => {
-    const powder = row.powder?.[0]?.powder_name ?? "—"
+    const powder = row.powder?.powder_name ?? "—"
+
 
     const qty = Number(row.qty_remaining)
     const value = qty * Number(row.rate_per_kg)
@@ -126,12 +127,13 @@ export async function loadUsageByPowder(
   const { data, error } = await supabase
     .from("usage")
     .select(`
-      used_at,
-      quantity_kg,
-      total_cost,
-      suppliers!inner ( supplier_name ),
-      clients!inner  ( client_name )
-    `)
+  used_at,
+  quantity_kg,
+  total_cost,
+  supplier: suppliers!inner ( supplier_name ),
+  client: clients!inner ( client_name )
+`)
+
     .eq("company_id", companyId)
     .eq("powder_id", powder.id)
     .gte("used_at", fromStr)
@@ -149,8 +151,9 @@ export async function loadUsageByPowder(
       month: "short",
       year: "numeric"
     }),
-    supplier: row.suppliers?.[0]?.supplier_name ?? "—",
-client: row.clients?.[0]?.client_name ?? "—",
+    supplier: row.supplier?.supplier_name ?? "—",
+client: row.client?.client_name ?? "—",
+
 
     qty: Number(row.quantity_kg),
     cost: Number(row.total_cost)
@@ -190,7 +193,7 @@ export async function loadStockByPowder(
       received_at,
       qty_received,
       rate_per_kg,
-      suppliers!inner ( supplier_name )
+      supplier: suppliers!inner ( supplier_name )
     `)
     .eq("company_id", companyId)
     .eq("powder_id", powder.id)
@@ -209,7 +212,7 @@ export async function loadStockByPowder(
       month: "short",
       year: "numeric",
     }),
-    supplier: row.suppliers?.[0]?.supplier_name?? "—",
+    supplier: row.supplier?.supplier_name ?? "—",
     qty: Number(row.qty_received ?? 0),
     rate: Number(row.rate_per_kg ?? 0),
     value: Number(row.qty_received ?? 0) * Number(row.rate_per_kg ?? 0),

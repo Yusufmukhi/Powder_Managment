@@ -31,7 +31,7 @@ export async function loadRecentBatches(companyId: string) {
       qty_remaining,
       rate_per_kg,
       received_at,
-      powder: powder ( powder_name ),
+      powder: powders ( powder_name ),
       supplier: suppliers ( supplier_name )
     `)
     .eq("company_id", companyId)
@@ -42,11 +42,8 @@ export async function loadRecentBatches(companyId: string) {
 
   return data.map(b => ({
     id: b.id,
-    powder:  b.powder?.[0]?.powder_name ?? "",
-supplier:
-b.supplier?.[0]?.supplier_name ?? ""
-,
-
+    powder: b.powder?.powder_name ?? "—",
+    supplier: b.supplier?.supplier_name ?? "—",
     received: new Date(b.received_at).toLocaleDateString(),
     qty_received: b.qty_received,
     qty_remaining: b.qty_remaining,
@@ -54,6 +51,7 @@ b.supplier?.[0]?.supplier_name ?? ""
     editable: b.qty_remaining === b.qty_received
   }))
 }
+
 
 
 export async function addStockBatch({
@@ -87,23 +85,50 @@ export async function addStockBatch({
 export async function updateStockBatch({
   batchId,
   qty,
-  rate
+  rate,
+  supplierId
 }: {
   batchId: string
   qty: number
   rate: number
+  supplierId: string
 }) {
+  if (!qty || qty <= 0) {
+    throw new Error("Invalid quantity")
+  }
+
+  // 1️⃣ Fetch current batch
+  const { data: batch, error: fetchError } = await supabase
+    .from("stock_batches")
+    .select("qty_received, qty_remaining")
+    .eq("id", batchId)
+    .single()
+
+  if (fetchError || !batch) throw fetchError
+  
+  // 2️⃣ Enforce rule (SERVER-SIDE SAFETY)
+  if (batch.qty_received !== batch.qty_remaining) {
+    throw new Error("Cannot edit stock after usage")
+  }
+  console.log(supplierId);
+  
+  // 3️⃣ Safe update
   const { error } = await supabase
     .from("stock_batches")
     .update({
       qty_received: qty,
-      qty_remaining: qty,
-      rate_per_kg: rate
+      qty_remaining: qty, // safe, never NULL
+      rate_per_kg: rate,
+      supplier_id: supplierId
     })
     .eq("id", batchId)
 
   if (error) throw error
 }
+
+
+
+
 
 // DELETE batch
 export async function deleteStockBatch(batchId: string) {

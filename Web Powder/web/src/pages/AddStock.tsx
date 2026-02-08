@@ -1,102 +1,101 @@
-  import { useEffect, useState } from "react"
-  import { useSession } from "../context/useSession"
-  import SearchSelect from "../components/SearchSelect"
-  import DataTable from "../components/DataTable"
-  import {
-    loadPowders,
-    loadSuppliers,
-    loadRecentBatches,
-    addStockBatch,
-    updateStockBatch,
-    deleteStockBatch
-  } from "../services/stock"
+import { useEffect, useState } from "react"
+import { useSession } from "../context/useSession"
+import SearchSelect from "../components/SearchSelect"
+import DataTable from "../components/DataTable"
+import {
+  loadPowders,
+  loadSuppliers,
+  loadRecentBatches,
+  addStockBatch,
+  updateStockBatch,
+  deleteStockBatch
+} from "../services/stock"
 
-  type Option = {
-    id: string
-    label: string
+type Option = {
+  id: string
+  label: string
+}
+
+type BatchRow = {
+  id: string
+  powder: string
+  supplier: string
+  received: string
+  qty_received: number
+  qty_remaining: number
+  rate: number
+  editable: boolean
+}
+
+export default function AddStock() {
+  const { session } = useSession()
+
+  /* ---------- master ---------- */
+  const [powders, setPowders] = useState<Option[]>([])
+  const [suppliers, setSuppliers] = useState<Option[]>([])
+
+  /* ---------- form ---------- */
+  const [powder, setPowder] = useState<Option | null>(null)
+  const [supplier, setSupplier] = useState<Option | null>(null)
+  const [qty, setQty] = useState("")
+  const [rate, setRate] = useState("")
+  const [saving, setSaving] = useState(false)
+
+  /* ---------- edit ---------- */
+  const [editingId, setEditingId] = useState<string | null>(null)
+
+  /* ---------- table ---------- */
+  const [batches, setBatches] = useState<BatchRow[]>([])
+
+  /* ======================================================
+     LOAD MASTER + DATA
+  ====================================================== */
+  useEffect(() => {
+    if (!session.companyId) return
+    refreshAll()
+  }, [session.companyId])
+
+  const refreshAll = async () => {
+    const [p, s, b] = await Promise.all([
+      loadPowders(session.companyId!),
+      loadSuppliers(session.companyId!),
+      loadRecentBatches(session.companyId!)
+    ])
+
+    setPowders(p.map(x => ({ id: x.id, label: x.powder_name })))
+    setSuppliers(s.map(x => ({ id: x.id, label: x.supplier_name })))
+    setBatches(b)
   }
 
-  type BatchRow = {
-    id: string
-    powder: string
-    supplier: string
-    received: string
-    qty_received: number
-    qty_remaining: number
-    rate: number
-    editable: boolean
-  }
-
-  export default function AddStock() {
-    const { session } = useSession()
-
-    // master data
-    const [powders, setPowders] = useState<Option[]>([])
-    const [suppliers, setSuppliers] = useState<Option[]>([])
-    const [batches, setBatches] = useState<BatchRow[]>([])
-
-    // form state
-    const [powder, setPowder] = useState<Option | null>(null)
-    const [supplier, setSupplier] = useState<Option | null>(null)
-    const [qty, setQty] = useState("")
-    const [rate, setRate] = useState("")
-    const [loading, setLoading] = useState(false)
-
-    // edit state
-    const [editing, setEditing] = useState<BatchRow | null>(null)
-
-    // -----------------------------------
-    // LOAD INITIAL DATA
-    // -----------------------------------
-    useEffect(() => {
-      if (!session.companyId) return
-
-      loadPowders(session.companyId).then(data =>
-        setPowders(
-          data.map(p => ({
-            id: p.id,
-            label: p.powder_name
-          }))
-        )
-      )
-
-      loadSuppliers(session.companyId).then(data =>
-        setSuppliers(
-          data.map(s => ({
-            id: s.id,
-            label: s.supplier_name
-          }))
-        )
-      )
-
-      refreshBatches()
-    }, [session.companyId])
-
-    const refreshBatches = () => {
-      if (!session.companyId) return
-      loadRecentBatches(session.companyId).then(setBatches)
+  /* ======================================================
+     ADD / UPDATE STOCK
+  ====================================================== */
+  const saveStock = async () => {
+    if (!powder || !supplier || !qty || !rate) {
+      alert("All fields required")
+      return
     }
 
-    // -----------------------------------
-    // ADD NEW BATCH
-    // -----------------------------------
-    const submit = async () => {
-      if (!powder || !supplier || !qty || !rate) {
-        alert("All fields are required")
-        return
-      }
+    const q = Number(qty)
+    const r = Number(rate)
 
-      const q = Number(qty)
-      const r = Number(rate)
+    if (q <= 0 || r <= 0) {
+      alert("Invalid qty or rate")
+      return
+    }
 
-      if (q <= 0 || r <= 0) {
-        alert("Quantity and rate must be positive")
-        return
-      }
+    setSaving(true)
 
-      try {
-        setLoading(true)
-
+    try {
+      if (editingId) {
+        // 🔐 update allowed only when remaining == received
+        await updateStockBatch({
+          batchId: editingId,
+          qty: q,
+          rate: r,
+          supplierId: supplier.id
+        })
+      } else {
         await addStockBatch({
           companyId: session.companyId!,
           powderId: powder.id,
@@ -105,257 +104,155 @@
           rate: r,
           userId: session.userId!
         })
-
-        // reset form
-        setQty("")
-        setRate("")
-        setSupplier(null)
-
-        refreshBatches()
-      } catch (e: any) {
-        alert(e.message)
-      } finally {
-        setLoading(false)
       }
-    }
 
-    // -----------------------------------
-    // EDIT EXISTING BATCH
-    // -----------------------------------
-    const startEdit = (row: BatchRow) => {
-  if (!row.editable) {
-    alert("This batch has already been used and cannot be edited.")
-    return
+      resetForm()
+      refreshAll()
+    } finally {
+      setSaving(false)
+    }
   }
 
-  setEditing(row)
-  setQty(String(row.qty_received))
-  setRate(String(row.rate))
+  const resetForm = () => {
+    setPowder(null)
+    setSupplier(null)
+    setQty("")
+    setRate("")
+    setEditingId(null)
+  }
 
-  // 🔒 lock powder to batch powder
-  const p = powders.find(p => p.label === row.powder)
-  if (p) setPowder(p)
-}
-
-
-    const saveEdit = async () => {
-      if (!editing) return
-
-      const q = Number(qty)
-      const r = Number(rate)
-
-      if (q <= 0 || r <= 0) {
-        alert("Invalid values")
-        return
-      }
-
-      try {
-        setLoading(true)
-
-        await updateStockBatch({
-          batchId: editing.id,
-          qty: q,
-          rate: r
-        })
-
-        setEditing(null)
-        setQty("")
-        setRate("")
-        refreshBatches()
-      } catch (e: any) {
-        alert(e.message)
-      } finally {
-        setLoading(false)
-      }
+  /* ======================================================
+     EDIT
+  ====================================================== */
+  const startEdit = (row: BatchRow) => {
+    if (!row.editable) {
+      alert("Cannot edit: stock already used")
+      return
     }
 
-    // -----------------------------------
-    // DELETE BATCH
-    // -----------------------------------
-    const removeBatch = async (row: BatchRow) => {
-      if (!row.editable) {
-        alert("This batch has already been used and cannot be deleted.")
-        return
-      }
+    setEditingId(row.id)
+    setQty(String(row.qty_received))
+    setRate(String(row.rate))
 
-      if (!confirm("Delete this batch permanently?")) return
+    const p = powders.find(x => x.label === row.powder)
+    const s = suppliers.find(x => x.label === row.supplier)
 
-      try {
-        await deleteStockBatch(row.id)
-        refreshBatches()
-      } catch (e: any) {
-        alert(e.message)
-      }
-    }
+    if (p) setPowder(p)
+    if (s) setSupplier(s)
+  }
 
-    return (
-      <div className="p-4 md:p-6 space-y-6">
-        {/* ===============================
-            ADD / EDIT FORM
-        ================================ */}
-        <div className="bg-white p-4 rounded shadow">
-          <h2 className="font-semibold mb-4">
-            {editing ? "Edit Stock Batch" : "Add Stock (FIFO Receiving)"}
-          </h2>
+  /* ======================================================
+     DELETE
+  ====================================================== */
+  const removeBatch = async (id: string) => {
+    if (!confirm("Delete this batch?")) return
+    await deleteStockBatch(id)
+    refreshAll()
+  }
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {/* POWDER SEARCH */}
-            <div className="relative group">
-  <SearchSelect
-    placeholder="Select powder"
-    options={powders}
-    value={powder}
-    disabled={!!editing}
-    onChange={v => {
-      if (editing) return
-      setPowder(v)
-      setSupplier(null)
-    }}
-    className={editing ? "cursor-not-allowed" : ""}
-  />
+  /* ======================================================
+     UI
+  ====================================================== */
+  return (
+    <div className="p-4 md:p-6 space-y-6">
 
-  {/* 🚫 Overlay to capture hover */}
-  {editing && (
-    <div className="absolute inset-0 cursor-not-allowed" />
-  )}
+      {/* ================= FORM ================= */}
+      <div className="bg-white p-4 rounded shadow">
+        <h2 className="font-semibold mb-4">
+          {editingId ? "Edit Stock Batch" : "Add Stock"}
+        </h2>
 
-  {/* 🟥 HOVER TEXT */}
-  {editing && (
-    <div
-      className="
-        pointer-events-none
-        absolute
-        left-1/2
-        -translate-x-1/2
-        top-full
-        mt-1
-        hidden
-        group-hover:block
-        bg-red-600
-        text-white
-        text-xs
-        px-2
-        py-1
-        rounded
-        shadow
-        z-50
-        whitespace-nowrap
-      "
-    >
-      Can’t change the powder name while editing
-    </div>
-  )}
-</div>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <SearchSelect
+            placeholder="Powder"
+            options={powders}
+            value={powder}
+            onChange={setPowder}
+          />
 
+          {/* ✅ supplier CAN be edited */}
+          <SearchSelect
+            placeholder="Supplier"
+            options={suppliers}
+            value={supplier}
+            onChange={setSupplier}
+          />
 
+          <input
+            className="border p-2 rounded"
+            placeholder="Qty (kg)"
+            value={qty}
+            onChange={e => setQty(e.target.value)}
+          />
 
-            {/* SUPPLIER SEARCH */}
-            <SearchSelect
-              placeholder="Select supplier"
-              options={suppliers}
-              value={supplier}
-              onChange={v => setSupplier(v)}
-            />
-
-            {/* QUANTITY */}
-            <input
-              className="border p-2 rounded"
-              placeholder="Quantity (kg)"
-              value={qty}
-              onChange={e => setQty(e.target.value)}
-            />
-
-            {/* RATE */}
-            <input
-              className="border p-2 rounded"
-              placeholder="Rate (₹ / kg)"
-              value={rate}
-              onChange={e => setRate(e.target.value)}
-            />
-          </div>
-
-          <div className="mt-4">
-            <button
-              onClick={editing ? saveEdit : submit}
-              disabled={loading}
-              className="bg-blue-600 text-white px-5 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
-            >
-              {loading
-                ? "Saving..."
-                : editing
-                ? "Save Changes"
-                : "Add Batch"}
-            </button>
-
-            {editing && (
-              <button
-                onClick={() => {
-                  setEditing(null)
-                  setQty("")
-                  setRate("")
-                }}
-                className="ml-4 text-sm text-gray-600 underline"
-              >
-                Cancel
-              </button>
-            )}
-          </div>
+          <input
+            className="border p-2 rounded"
+            placeholder="Rate"
+            value={rate}
+            onChange={e => setRate(e.target.value)}
+          />
         </div>
 
-        {/* ===============================
-            RECENT BATCHES TABLE
-        ================================ */}
-        <div className="bg-white p-4 rounded shadow">
-          <h2 className="font-semibold mb-3">
-            Recent Stock Batches
-          </h2>
+        <div className="mt-4 flex gap-3">
+          <button
+            onClick={saveStock}
+            disabled={saving}
+            className="bg-blue-600 text-white px-5 py-2 rounded"
+          >
+            {saving ? "Saving..." : editingId ? "Update Stock" : "Add Stock"}
+          </button>
 
-          <DataTable
-            columns={[
-              { key: "received", label: "Received" },
-              { key: "powder", label: "Powder" },
-              { key: "supplier", label: "Supplier" },
-              { key: "qty_remaining", label: "Qty Remaining" },
-              { key: "rate", label: "Rate / kg" },
-              {
-    key: "actions",
-    label: "Actions",
-    render: (row: any) => row.actions
-  }
+          {editingId && (
+            <button
+              onClick={resetForm}
+              className="text-gray-600"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
+      </div>
 
-            ]}
-            data={batches.map(b => ({
-              ...b,
-              actions: (
+      {/* ================= TABLE ================= */}
+      <div className="bg-white p-4 rounded shadow">
+        <h2 className="font-semibold mb-3">Stock Batches</h2>
+
+        <DataTable
+          columns={[
+            { key: "received", label: "Date" },
+            { key: "powder", label: "Powder" },
+            { key: "supplier", label: "Supplier" },
+            { key: "qty_received", label: "Received" },
+            { key: "qty_remaining", label: "Remaining" },
+            { key: "rate", label: "Rate" },
+            {
+              key: "actions",
+              label: "Actions",
+              render: (row: BatchRow) => (
                 <div className="flex gap-3">
+                  {row.editable && (
+                    <button
+                      onClick={() => startEdit(row)}
+                      className="text-blue-600 text-sm"
+                    >
+                      Edit
+                    </button>
+                  )}
                   <button
-                    onClick={() => startEdit(b)}
-                    className={`text-sm ${
-                      b.editable
-                        ? "text-blue-600 hover:underline"
-                        : "text-gray-400 cursor-not-allowed"
-                    }`}
-                  >
-                    Edit
-                  </button>
-
-                  <button
-                    onClick={() => removeBatch(b)}
-                    className={`text-sm ${
-                      b.editable
-                        ? "text-red-600 hover:underline"
-                        : "text-gray-400 cursor-not-allowed"
-                    }`}
+                    onClick={() => removeBatch(row.id)}
+                    className="text-red-600 text-sm"
                   >
                     Delete
                   </button>
                 </div>
               )
-            }))}
-            pageSize={6}
-            height="h-80"
-          />
-        </div>
+            }
+          ]}
+          data={batches.map(b => ({ ...b, actions: "" }))}
+          pageSize={6}
+          height="h-80"
+        />
       </div>
-    )
-  }
+    </div>
+  )
+}
