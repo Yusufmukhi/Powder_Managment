@@ -110,7 +110,9 @@ export default function SearchSelect({
           {filtered.map((o, i) => (
             <div
               key={o.id}
-              ref={el => (itemRefs.current[i] = el)}
+              ref={el => {
+                itemRefs.current[i] = el
+              }}
               onClick={() => {
                 onChange(o)
                 setQuery("")
