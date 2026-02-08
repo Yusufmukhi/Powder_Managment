@@ -138,9 +138,9 @@
           quantity_kg,
           total_cost,
           used_at,
-          powders ( powder_name ),
-          suppliers ( supplier_name ),
-          clients ( client_name )
+          powder:powders ( powder_name ),
+         supplier: suppliers ( supplier_name ),
+          client: clients ( client_name )
         `)
         .eq("company_id", session.companyId)
         .order("used_at", { ascending: false })
@@ -151,9 +151,9 @@
         data.map(u => ({
           id: u.id,
           used_at: new Date(u.used_at).toLocaleString(),
-          powder: u.powders?.powder_name ?? "",
-supplier: u.suppliers?.supplier_name ?? "",
-client: u.clients?.client_name ?? "",
+          powder: u.powder?.[0]?.powder_name ?? "",
+supplier: u.supplier?.[0]?.supplier_name ?? "",
+client: u.client?.[0]?.client_name ?? "",
 
           qty: u.quantity_kg,
           cost: u.total_cost

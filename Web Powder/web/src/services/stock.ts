@@ -31,8 +31,8 @@ export async function loadRecentBatches(companyId: string) {
       qty_remaining,
       rate_per_kg,
       received_at,
-      powders ( powder_name ),
-      suppliers ( supplier_name )
+      powder: powder ( powder_name ),
+      supplier: suppliers ( supplier_name )
     `)
     .eq("company_id", companyId)
     .order("received_at", { ascending: false })
@@ -42,9 +42,9 @@ export async function loadRecentBatches(companyId: string) {
 
   return data.map(b => ({
     id: b.id,
-    powder:  b.powders?.powder_name ?? "",
+    powder:  b.powder?.[0]?.powder_name ?? "",
 supplier:
-b.suppliers?.supplier_name ?? ""
+b.supplier?.[0]?.supplier_name ?? ""
 ,
 
     received: new Date(b.received_at).toLocaleDateString(),

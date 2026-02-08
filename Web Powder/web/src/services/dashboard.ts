@@ -38,7 +38,8 @@ export async function loadInventoryGrouped(companyId: string) {
     .select(`
       qty_remaining,
       rate_per_kg,
-      powders ( powder_name )
+      powder: powders ( powder_name )
+
     `)
     .eq("company_id", companyId)
     .gt("qty_remaining", 0)
@@ -49,7 +50,7 @@ export async function loadInventoryGrouped(companyId: string) {
   > = {}
 
   data?.forEach(row => {
-    const powder = row.powders?.powder_name ?? "—"
+    const powder = row.powder?.[0]?.powder_name ?? "—"
 
     const qty = Number(row.qty_remaining)
     const value = qty * Number(row.rate_per_kg)
@@ -148,7 +149,7 @@ export async function loadUsageByPowder(
       month: "short",
       year: "numeric"
     }),
-    supplier: row.suppliers?.supplier_name ?? "—",
+    supplier: row.suppliers?.[0]?.supplier_name ?? "—",
 client: row.clients?.client_name ?? "—",
 
     qty: Number(row.quantity_kg),
@@ -208,7 +209,7 @@ export async function loadStockByPowder(
       month: "short",
       year: "numeric",
     }),
-    supplier: row.suppliers?.supplier_name?? "—",
+    supplier: row.suppliers?.[0]?.supplier_name?? "—",
     qty: Number(row.qty_received ?? 0),
     rate: Number(row.rate_per_kg ?? 0),
     value: Number(row.qty_received ?? 0) * Number(row.rate_per_kg ?? 0),
