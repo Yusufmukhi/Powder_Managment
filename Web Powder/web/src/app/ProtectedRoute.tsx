@@ -1,12 +1,14 @@
 import { Navigate } from "react-router-dom"
 import { useSession } from "../context/useSession"
+import React from "react"
+
 
 export default function ProtectedRoute({
   role,
   children
 }: {
   role?: "owner" | "staff"
-  children: JSX.Element
+  children: React.ReactNode
 }) {
   const { session, loading } = useSession()
 

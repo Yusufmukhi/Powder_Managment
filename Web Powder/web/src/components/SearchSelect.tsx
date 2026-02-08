@@ -6,10 +6,12 @@ type Option = {
 }
 
 type Props = {
+  placeholder: string
   options: Option[]
   value: Option | null
-  onChange: (v: Option) => void
-  placeholder?: string
+  onChange: (v: Option | null) => void
+  disabled?: boolean
+  className?: string
 }
 
 export default function SearchSelect({
