@@ -50,6 +50,7 @@ export async function loadInventoryGrouped(companyId: string) {
 
   data?.forEach(row => {
     const powder = row.powders?.[0]?.powder_name ?? "Unknown"
+
     const qty = Number(row.qty_remaining)
     const value = qty * Number(row.rate_per_kg)
 
@@ -148,7 +149,8 @@ export async function loadUsageByPowder(
       year: "numeric"
     }),
     supplier: row.suppliers?.[0]?.supplier_name ?? "—",
-  client: row.clients?.[0]?.client_name ?? "—",
+client: row.clients?.[0]?.client_name ?? "—",
+
     qty: Number(row.quantity_kg),
     cost: Number(row.total_cost)
   }))

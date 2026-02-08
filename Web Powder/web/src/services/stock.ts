@@ -42,8 +42,10 @@ export async function loadRecentBatches(companyId: string) {
 
   return data.map(b => ({
     id: b.id,
-    powder: b.powders?.[0]?.powder_name ?? "",
-supplier: b.suppliers?.[0]?.supplier_name ?? "",
+    powder:  b.powders?.[0]?.powder_name ?? "",
+supplier:
+b.suppliers?.[0]?.supplier_name ?? ""
+,
 
     received: new Date(b.received_at).toLocaleDateString(),
     qty_received: b.qty_received,
