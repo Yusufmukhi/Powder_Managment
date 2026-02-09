@@ -15,6 +15,9 @@ from reportlab.lib.units import inch
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
+# In reports/annual.py
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from fastapi.responses import FileResponse
 
