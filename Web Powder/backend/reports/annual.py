@@ -28,17 +28,15 @@ from dateutil.relativedelta import relativedelta
 # ---------------------------------------------------------
 # FONT (Annual ONLY – backend/assets/fonts)
 # ---------------------------------------------------------
-def register_fonts():
-    backend_root = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..")
-    )
-    font_dir = os.path.join(backend_root, "assets", "fonts")
+# At top of file
+from utils.fonts import get_font_path   # adjust import path if needed
 
+def register_fonts():
     pdfmetrics.registerFont(
-        TTFont("DejaVuSans", os.path.join(font_dir, "DejaVuSans.ttf"))
+        TTFont("DejaVuSans", get_font_path("DejaVuSans.ttf"))
     )
     pdfmetrics.registerFont(
-        TTFont("DejaVuSans-Bold", os.path.join(font_dir, "DejaVuSans-Bold.ttf"))
+        TTFont("DejaVuSans-Bold", get_font_path("DejaVuSans-Bold.ttf"))
     )
 
 
