@@ -1,9 +1,12 @@
+# reports/routes.py
+
 from fastapi import APIRouter, Depends
 from fastapi.responses import FileResponse
 from session import get_company_id
 
-from monthly import generate_monthly_pdf
-from annual import generate_annual_pdf
+# These now use the full package path
+from reports.monthly import generate_monthly_pdf
+from reports.annual  import generate_annual_pdf
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
 
