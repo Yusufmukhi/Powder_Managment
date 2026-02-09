@@ -74,7 +74,8 @@ def generate_po_pdf(po_id: str) -> str:
             quantity_kg,
             rate_per_kg,
             amount,
-            powders ( powder_name )
+            powder: powders ( powder_name )
+
         """) \
         .eq("po_id", po_id) \
         .execute().data or []
