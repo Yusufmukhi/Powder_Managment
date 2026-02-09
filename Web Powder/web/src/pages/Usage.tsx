@@ -1,3 +1,4 @@
+// src/pages/Usage.tsx
 import { useEffect, useState } from "react";
 import { useSession } from "../context/useSession";
 import SearchSelect from "../components/SearchSelect";
@@ -25,7 +26,6 @@ type UsageRow = {
 export default function Usage() {
   const { session, loading: sessionLoading } = useSession();
 
-  // Guard: wait for session or show message
   if (sessionLoading) {
     return (
       <div className="p-6 text-center text-gray-500">
@@ -42,7 +42,6 @@ export default function Usage() {
     );
   }
 
-  // From here: TypeScript knows session.companyId exists
   const companyId = session.companyId;
 
   const [powders, setPowders] = useState<Option[]>([]);
@@ -59,7 +58,6 @@ export default function Usage() {
   const [loading, setLoading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  // Load all powders
   useEffect(() => {
     supabase
       .from("powders")
@@ -80,7 +78,6 @@ export default function Usage() {
     refreshUsage();
   }, [companyId]);
 
-  // Suppliers – add mode: available stock | edit mode: only original supplier
   useEffect(() => {
     if (!powder?.id) {
       setSuppliers([]);
@@ -89,7 +86,6 @@ export default function Usage() {
     }
 
     if (editingId) {
-      // Edit: force original supplier only
       const row = usageRows.find((r) => r.id === editingId);
       if (row && row.supplier_id && row.supplier) {
         const original = {
@@ -105,7 +101,6 @@ export default function Usage() {
       return;
     }
 
-    // Add mode: only suppliers with stock
     supabase
       .from("stock_batches")
       .select("supplier_id, suppliers ( supplier_name )")
@@ -120,7 +115,7 @@ export default function Usage() {
         }
 
         const map = new Map<string, string>();
-        data.forEach((r) => {
+        data.forEach((r: any) => {
           const name = r.suppliers?.[0]?.supplier_name?.trim();
           if (name && r.supplier_id) map.set(r.supplier_id, name);
         });
@@ -135,7 +130,6 @@ export default function Usage() {
       });
   }, [powder?.id, companyId, editingId, usageRows]);
 
-  // Load clients
   useEffect(() => {
     supabase
       .from("clients")
@@ -229,12 +223,12 @@ export default function Usage() {
     for (const b of batches ?? []) {
       if (remaining <= 0) break;
 
-      const used = Math.min(b.qty_remaining, remaining);
+      const used = Math.min(b.qty_remaining ?? 0, remaining);
       totalCost += used * (b.rate_per_kg ?? 0);
 
       await supabase
         .from("stock_batches")
-        .update({ qty_remaining: b.qty_remaining - used })
+        .update({ qty_remaining: (b.qty_remaining ?? 0) - used })
         .eq("id", b.id);
 
       await supabase.from("usage_fifo").insert({
@@ -272,7 +266,6 @@ export default function Usage() {
       let usageId: string;
 
       if (editingId) {
-        // Rollback old FIFO (using original usageId)
         const { data: fifo } = await supabase
           .from("usage_fifo")
           .select("stock_batch_id, qty_used")
@@ -287,7 +280,6 @@ export default function Usage() {
 
         await supabase.from("usage_fifo").delete().eq("usage_id", editingId);
 
-        // Update quantity + client (powder & supplier stay unchanged)
         await supabase
           .from("usage")
           .update({
@@ -318,10 +310,8 @@ export default function Usage() {
         usageId = data.id;
       }
 
-      // Re-apply FIFO (always uses current powder/supplier – which are locked in edit mode)
       await applyFIFO(usageId, powder.id, supplier.id, quantity);
 
-      // Reset form
       setPowder(null);
       setSupplier(null);
       setClient(null);

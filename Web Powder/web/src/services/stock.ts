@@ -1,14 +1,14 @@
-import { supabase } from "../lib/supabase"
+import { supabase } from "../lib/supabase";
 
 export async function loadPowders(companyId: string) {
   const { data, error } = await supabase
     .from("powders")
     .select("id, powder_name")
     .eq("company_id", companyId)
-    .order("powder_name")
+    .order("powder_name");
 
-  if (error) throw error
-  return data
+  if (error) throw error;
+  return data ?? [];
 }
 
 export async function loadSuppliers(companyId: string) {
@@ -16,10 +16,10 @@ export async function loadSuppliers(companyId: string) {
     .from("suppliers")
     .select("id, supplier_name")
     .eq("company_id", companyId)
-    .order("supplier_name")
+    .order("supplier_name");
 
-  if (error) throw error
-  return data
+  if (error) throw error;
+  return data ?? [];
 }
 
 export async function loadRecentBatches(companyId: string) {
@@ -31,16 +31,16 @@ export async function loadRecentBatches(companyId: string) {
       qty_remaining,
       rate_per_kg,
       received_at,
-      powder: powders ( powder_name ),
-      supplier: suppliers ( supplier_name )
+      powder:powders!inner (powder_name),
+      supplier:suppliers!inner (supplier_name)
     `)
     .eq("company_id", companyId)
     .order("received_at", { ascending: false })
-    .limit(50)
+    .limit(50);
 
-  if (error) throw error
+  if (error) throw error;
 
-  return data.map(b => ({
+  return (data ?? []).map((b: any) => ({
     id: b.id,
     powder: b.powder?.powder_name ?? "—",
     supplier: b.supplier?.supplier_name ?? "—",
@@ -48,11 +48,9 @@ export async function loadRecentBatches(companyId: string) {
     qty_received: b.qty_received,
     qty_remaining: b.qty_remaining,
     rate: b.rate_per_kg,
-    editable: b.qty_remaining === b.qty_received
-  }))
+    editable: b.qty_remaining === b.qty_received,
+  }));
 }
-
-
 
 export async function addStockBatch({
   companyId,
@@ -60,14 +58,14 @@ export async function addStockBatch({
   supplierId,
   qty,
   rate,
-  userId
+  userId,
 }: {
-  companyId: string
-  powderId: string
-  supplierId: string
-  qty: number
-  rate: number
-  userId: string
+  companyId: string;
+  powderId: string;
+  supplierId: string;
+  qty: number;
+  rate: number;
+  userId: string;
 }) {
   const { error } = await supabase.from("stock_batches").insert({
     company_id: companyId,
@@ -76,66 +74,57 @@ export async function addStockBatch({
     qty_received: qty,
     qty_remaining: qty,
     rate_per_kg: rate,
-    created_by: userId
-  })
+    created_by: userId,
+  });
 
-  if (error) throw error
+  if (error) throw error;
 }
-// EDIT batch
+
 export async function updateStockBatch({
   batchId,
   qty,
   rate,
-  supplierId
+  supplierId,
 }: {
-  batchId: string
-  qty: number
-  rate: number
-  supplierId: string
+  batchId: string;
+  qty: number;
+  rate: number;
+  supplierId: string;
 }) {
   if (!qty || qty <= 0) {
-    throw new Error("Invalid quantity")
+    throw new Error("Invalid quantity");
   }
 
-  // 1️⃣ Fetch current batch
   const { data: batch, error: fetchError } = await supabase
     .from("stock_batches")
     .select("qty_received, qty_remaining")
     .eq("id", batchId)
-    .single()
+    .single();
 
-  if (fetchError || !batch) throw fetchError
-  
-  // 2️⃣ Enforce rule (SERVER-SIDE SAFETY)
+  if (fetchError || !batch) throw fetchError || new Error("Batch not found");
+
   if (batch.qty_received !== batch.qty_remaining) {
-    throw new Error("Cannot edit stock after usage")
+    throw new Error("Cannot edit stock after usage");
   }
-  console.log(supplierId);
-  
-  // 3️⃣ Safe update
+
   const { error } = await supabase
     .from("stock_batches")
     .update({
       qty_received: qty,
-      qty_remaining: qty, // safe, never NULL
+      qty_remaining: qty,
       rate_per_kg: rate,
-      supplier_id: supplierId
+      supplier_id: supplierId,
     })
-    .eq("id", batchId)
+    .eq("id", batchId);
 
-  if (error) throw error
+  if (error) throw error;
 }
 
-
-
-
-
-// DELETE batch
 export async function deleteStockBatch(batchId: string) {
   const { error } = await supabase
     .from("stock_batches")
     .delete()
-    .eq("id", batchId)
+    .eq("id", batchId);
 
-  if (error) throw error
+  if (error) throw error;
 }
