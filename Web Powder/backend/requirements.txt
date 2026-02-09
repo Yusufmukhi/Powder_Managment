@@ -4,3 +4,4 @@ python-dotenv
 postgrest
 supabase
 reportlab
+matplotlib
