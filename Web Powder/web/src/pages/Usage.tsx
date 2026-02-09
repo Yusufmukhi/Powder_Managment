@@ -23,7 +23,27 @@ type UsageRow = {
 };
 
 export default function Usage() {
-  const { session } = useSession();
+  const { session, loading: sessionLoading } = useSession();
+
+  // Guard: wait for session or show message
+  if (sessionLoading) {
+    return (
+      <div className="p-6 text-center text-gray-500">
+        Loading session...
+      </div>
+    );
+  }
+
+  if (!session || !session.companyId) {
+    return (
+      <div className="p-6 text-center text-red-600 font-medium">
+        No company selected or session invalid. Please log in again.
+      </div>
+    );
+  }
+
+  // From here: TypeScript knows session.companyId exists
+  const companyId = session.companyId;
 
   const [powders, setPowders] = useState<Option[]>([]);
   const [suppliers, setSuppliers] = useState<Option[]>([]);
@@ -39,59 +59,70 @@ export default function Usage() {
   const [loading, setLoading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  // ────────────────────────────────────────────────
-  // LOAD ALL POWDERS (so edit always finds them)
-  // ────────────────────────────────────────────────
+  // Load all powders
   useEffect(() => {
-    if (!session?.companyId) return;
-
     supabase
       .from("powders")
       .select("id, powder_name")
-      .eq("company_id", session.companyId)
+      .eq("company_id", companyId)
       .order("powder_name")
-      .then(({ data, error }) => {
-        if (error) {
-          console.error("Powders load error:", error);
-          return;
+      .then(({ data }) => {
+        if (data) {
+          setPowders(
+            data.map((p) => ({
+              id: p.id,
+              label: p.powder_name.trim(),
+            }))
+          );
         }
-        setPowders(
-          data?.map((p) => ({ id: p.id, label: p.powder_name.trim() })) ?? []
-        );
       });
 
     refreshUsage();
-  }, [session?.companyId]);
+  }, [companyId]);
 
-  // ────────────────────────────────────────────────
-  // LOAD SUPPLIERS WHEN POWDER CHANGES + AUTO-SELECT ON EDIT
-  // ────────────────────────────────────────────────
+  // Suppliers – add mode: available stock | edit mode: only original supplier
   useEffect(() => {
-    if (!powder?.id || !session?.companyId) {
+    if (!powder?.id) {
       setSuppliers([]);
       if (!editingId) setSupplier(null);
       return;
     }
 
+    if (editingId) {
+      // Edit: force original supplier only
+      const row = usageRows.find((r) => r.id === editingId);
+      if (row && row.supplier_id && row.supplier) {
+        const original = {
+          id: row.supplier_id,
+          label: row.supplier.trim(),
+        };
+        setSuppliers([original]);
+        setSupplier(original);
+      } else {
+        setSuppliers([]);
+        setSupplier(null);
+      }
+      return;
+    }
+
+    // Add mode: only suppliers with stock
     supabase
       .from("stock_batches")
       .select("supplier_id, suppliers ( supplier_name )")
-      .eq("company_id", session.companyId)
+      .eq("company_id", companyId)
       .eq("powder_id", powder.id)
       .gt("qty_remaining", 0)
-      .then(({ data, error }) => {
-        if (error) {
-          console.error("Suppliers load error:", error);
+      .then(({ data }) => {
+        if (!data || data.length === 0) {
           setSuppliers([]);
+          setSupplier(null);
           return;
         }
 
         const map = new Map<string, string>();
-        data?.forEach((r) => {
+        data.forEach((r) => {
           const name = r.suppliers?.[0]?.supplier_name?.trim();
-          if (name && r.supplier_id) {
-            map.set(r.supplier_id, name);
-          }
+          if (name && r.supplier_id) map.set(r.supplier_id, name);
         });
 
         const options = Array.from(map.entries()).map(([id, label]) => ({
@@ -100,75 +131,55 @@ export default function Usage() {
         }));
 
         setSuppliers(options);
-
-        // If in edit mode → select supplier by ID
-        if (editingId) {
-          const row = usageRows.find((r) => r.id === editingId);
-          if (row?.supplier_id) {
-            const match = options.find((opt) => opt.id === row.supplier_id);
-            if (match) {
-              setSupplier(match);
-            } else if (options.length > 0) {
-              // fallback if supplier has no remaining stock now
-              console.warn("Supplier ID not in current options → using first", {
-                wantedId: row.supplier_id,
-                available: options.map((o) => o.id),
-              });
-              setSupplier(options[0]);
-            }
-          }
-        }
+        setSupplier(null);
       });
-  }, [powder?.id, session?.companyId, editingId, usageRows]);
+  }, [powder?.id, companyId, editingId, usageRows]);
 
-  // ────────────────────────────────────────────────
-  // LOAD CLIENTS
-  // ────────────────────────────────────────────────
+  // Load clients
   useEffect(() => {
-    if (!session?.companyId) return;
-
     supabase
       .from("clients")
       .select("id, client_name")
-      .eq("company_id", session.companyId)
+      .eq("company_id", companyId)
       .order("client_name")
-      .then(({ data, error }) => {
-        if (error) {
-          console.error("Clients load error:", error);
-          return;
+      .then(({ data }) => {
+        if (data) {
+          setClients(
+            data.map((c) => ({
+              id: c.id,
+              label: c.client_name.trim(),
+            }))
+          );
         }
-        setClients(
-          data?.map((c) => ({ id: c.id, label: c.client_name.trim() })) ?? []
-        );
       });
-  }, [session?.companyId]);
+  }, [companyId]);
 
-  // ────────────────────────────────────────────────
-  // REFRESH USAGE TABLE
-  // ────────────────────────────────────────────────
   const refreshUsage = async () => {
-    if (!session?.companyId) return;
-
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from("usage")
-      .select("id, used_at, quantity_kg, total_cost, powder_id, supplier_id, client_id")
-      .eq("company_id", session.companyId)
+      .select(`
+        id,
+        used_at,
+        quantity_kg,
+        total_cost,
+        powder_id,
+        supplier_id,
+        client_id
+      `)
+      .eq("company_id", companyId)
       .order("used_at", { ascending: false });
 
-    if (error || !data) {
-      console.error("Usage refresh error:", error);
-      return;
-    }
+    if (!data) return;
 
-    const [pRes, sRes, cRes] = await Promise.all([
+    const [powdersRes, suppliersRes, clientsRes] = await Promise.all([
       supabase.from("powders").select("id, powder_name"),
       supabase.from("suppliers").select("id, supplier_name"),
       supabase.from("clients").select("id, client_name"),
     ]);
 
-    const pMap = new Map(pRes.data?.map((p) => [p.id, p.powder_name]) ?? []);
-    const sMap = new Map(sRes.data?.map((s) => [s.id, s.supplier_name]) ?? []);
-    const cMap = new Map(cRes.data?.map((c) => [c.id, c.client_name]) ?? []);
+    const powderMap = new Map(powdersRes.data?.map((p) => [p.id, p.powder_name]));
+    const supplierMap = new Map(suppliersRes.data?.map((s) => [s.id, s.supplier_name]));
+    const clientMap = new Map(clientsRes.data?.map((c) => [c.id, c.client_name]));
 
     setUsageRows(
       data.map((u) => ({
@@ -177,38 +188,25 @@ export default function Usage() {
         powder_id: u.powder_id,
         supplier_id: u.supplier_id,
         client_id: u.client_id,
-        powder: pMap.get(u.powder_id) ?? "—",
-        supplier: sMap.get(u.supplier_id) ?? "—",
-        client: cMap.get(u.client_id) ?? "—",
+        powder: powderMap.get(u.powder_id) ?? "—",
+        supplier: supplierMap.get(u.supplier_id) ?? "—",
+        client: clientMap.get(u.client_id) ?? "—",
         qty: u.quantity_kg ?? 0,
         cost: u.total_cost ?? 0,
       }))
     );
   };
 
-  // ────────────────────────────────────────────────
-  // START EDIT – simple & reliable
-  // ────────────────────────────────────────────────
   const startEdit = (row: UsageRow) => {
     setEditingId(row.id);
     setQty(row.qty.toString());
 
-    // Powder (must exist since we load all)
-    const p = powders.find((opt) => opt.id === row.powder_id);
-    if (p) {
-      setPowder(p);
-      // suppliers + auto-select happen in useEffect
-    } else {
-      console.warn("Powder ID not found in loaded list", row.powder_id);
-    }
+    const p = powders.find((p) => p.id === row.powder_id);
+    if (p) setPowder(p);
 
-    // Client
-    const c = clients.find((opt) => opt.id === row.client_id);
+    const c = clients.find((c) => c.id === row.client_id);
     if (c) setClient(c);
   };
-
-  // FIFO, saveUsage, cancelUsage remain mostly unchanged
-  // (keeping them as-is since they were not the issue)
 
   const applyFIFO = async (
     usageId: string,
@@ -222,7 +220,7 @@ export default function Usage() {
     const { data: batches } = await supabase
       .from("stock_batches")
       .select("id, qty_remaining, rate_per_kg")
-      .eq("company_id", session?.companyId)
+      .eq("company_id", companyId)
       .eq("powder_id", powderId)
       .eq("supplier_id", supplierId)
       .gt("qty_remaining", 0)
@@ -230,15 +228,17 @@ export default function Usage() {
 
     for (const b of batches ?? []) {
       if (remaining <= 0) break;
+
       const used = Math.min(b.qty_remaining, remaining);
       totalCost += used * (b.rate_per_kg ?? 0);
 
-      await supabase.from("stock_batches").update({
-        qty_remaining: b.qty_remaining - used,
-      }).eq("id", b.id);
+      await supabase
+        .from("stock_batches")
+        .update({ qty_remaining: b.qty_remaining - used })
+        .eq("id", b.id);
 
       await supabase.from("usage_fifo").insert({
-        company_id: session?.companyId,
+        company_id: companyId,
         usage_id: usageId,
         stock_batch_id: b.id,
         qty_used: used,
@@ -248,9 +248,10 @@ export default function Usage() {
       remaining -= used;
     }
 
-    if (totalCost > 0) {
-      await supabase.from("usage").update({ total_cost: totalCost }).eq("id", usageId);
-    }
+    await supabase
+      .from("usage")
+      .update({ total_cost: totalCost })
+      .eq("id", usageId);
   };
 
   const saveUsage = async () => {
@@ -261,15 +262,17 @@ export default function Usage() {
 
     const quantity = Number(qty);
     if (isNaN(quantity) || quantity <= 0) {
-      alert("Invalid quantity");
+      alert("Enter a valid positive quantity");
       return;
     }
 
     setLoading(true);
+
     try {
-      let usageId = editingId;
+      let usageId: string;
 
       if (editingId) {
+        // Rollback old FIFO (using original usageId)
         const { data: fifo } = await supabase
           .from("usage_fifo")
           .select("stock_batch_id, qty_used")
@@ -284,39 +287,50 @@ export default function Usage() {
 
         await supabase.from("usage_fifo").delete().eq("usage_id", editingId);
 
+        // Update quantity + client (powder & supplier stay unchanged)
         await supabase
           .from("usage")
-          .update({ quantity_kg: quantity })
+          .update({
+            quantity_kg: quantity,
+            client_id: client.id,
+          })
           .eq("id", editingId);
+
+        usageId = editingId;
       } else {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from("usage")
           .insert({
-            company_id: session?.companyId,
+            company_id: companyId,
             powder_id: powder.id,
             supplier_id: supplier.id,
             client_id: client.id,
             quantity_kg: quantity,
-            created_by: session?.userId,
+            created_by: session.userId ?? undefined,
           })
           .select()
           .single();
 
-        usageId = data?.id;
-        if (!usageId) throw new Error("Insert failed");
+        if (error || !data?.id) {
+          throw error || new Error("Failed to create usage");
+        }
+
+        usageId = data.id;
       }
 
+      // Re-apply FIFO (always uses current powder/supplier – which are locked in edit mode)
       await applyFIFO(usageId, powder.id, supplier.id, quantity);
 
+      // Reset form
       setPowder(null);
       setSupplier(null);
       setClient(null);
       setQty("");
       setEditingId(null);
 
-      refreshUsage();
+      await refreshUsage();
     } catch (err) {
-      console.error(err);
+      console.error("Save error:", err);
       alert("Error saving usage");
     } finally {
       setLoading(false);
@@ -342,10 +356,10 @@ export default function Usage() {
       await supabase.from("usage_fifo").delete().eq("usage_id", row.id);
       await supabase.from("usage").delete().eq("id", row.id);
 
-      refreshUsage();
+      await refreshUsage();
     } catch (err) {
       console.error(err);
-      alert("Failed to cancel");
+      alert("Failed to cancel usage");
     }
   };
 
@@ -353,7 +367,7 @@ export default function Usage() {
     <div className="p-4 md:p-6 space-y-6">
       <div className="bg-white p-4 rounded shadow">
         <h2 className="font-semibold mb-4">
-          {editingId ? "Edit Usage" : "Add Usage"}
+          {editingId ? "Edit Usage (quantity & client editable)" : "Add Usage"}
         </h2>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -368,15 +382,15 @@ export default function Usage() {
                 setPowder(v);
                 setSupplier(null);
               }}
-              className={editingId ? "cursor-not-allowed" : ""}
+              className={editingId ? "cursor-not-allowed opacity-75" : ""}
             />
             {editingId && (
-              <div className="absolute inset-0 cursor-not-allowed" />
-            )}
-            {editingId && (
-              <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-full mt-1 hidden group-hover:block bg-red-600 text-white text-xs px-2 py-1 rounded shadow z-50 whitespace-nowrap">
-                Can’t change powder while editing
-              </div>
+              <>
+                <div className="absolute inset-0 cursor-not-allowed" />
+                <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-full mt-1 hidden group-hover:block bg-red-600 text-white text-xs px-2 py-1 rounded shadow z-50 whitespace-nowrap">
+                  Cannot change powder while editing
+                </div>
+              </>
             )}
           </div>
 
@@ -390,15 +404,15 @@ export default function Usage() {
                 if (editingId) return;
                 setSupplier(v);
               }}
-              className={editingId ? "cursor-not-allowed" : ""}
+              className={editingId ? "cursor-not-allowed opacity-75" : ""}
             />
             {editingId && (
-              <div className="absolute inset-0 cursor-not-allowed" />
-            )}
-            {editingId && (
-              <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-full mt-1 hidden group-hover:block bg-red-600 text-white text-xs px-2 py-1 rounded shadow z-50 whitespace-nowrap">
-                Can’t change supplier while editing
-              </div>
+              <>
+                <div className="absolute inset-0 cursor-not-allowed" />
+                <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-full mt-1 hidden group-hover:block bg-red-600 text-white text-xs px-2 py-1 rounded shadow z-50 whitespace-nowrap">
+                  Cannot change supplier while editing
+                </div>
+              </>
             )}
           </div>
 
@@ -415,7 +429,8 @@ export default function Usage() {
             value={qty}
             onChange={(e) => setQty(e.target.value)}
             type="number"
-            step="any"
+            step="0.01"
+            min="0.01"
           />
         </div>
 
@@ -423,7 +438,7 @@ export default function Usage() {
           <button
             onClick={saveUsage}
             disabled={loading}
-            className="bg-blue-600 text-white px-5 py-2 rounded disabled:opacity-60"
+            className="bg-blue-600 text-white px-5 py-2 rounded disabled:opacity-50"
           >
             {loading ? "Processing..." : editingId ? "Save Changes" : "Add Usage"}
           </button>
@@ -439,7 +454,7 @@ export default function Usage() {
             { key: "powder", label: "Powder" },
             { key: "supplier", label: "Supplier" },
             { key: "client", label: "Client" },
-            { key: "qty", label: "Qty" },
+            { key: "qty", label: "Qty (kg)" },
             { key: "cost", label: "Cost" },
             {
               key: "actions",

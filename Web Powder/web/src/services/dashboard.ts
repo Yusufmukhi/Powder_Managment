@@ -34,12 +34,14 @@ export async function loadKpis(companyId: string) {
 /* ---------------- GROUPED INVENTORY ---------------- */
 export async function loadInventoryGrouped(companyId: string) {
   const { data } = await supabase
-    .from("stock_batches")
-    .select(`
-  qty_remaining,
-  rate_per_kg,
-  powder: powders ( powder_name )
-`)
+  .from("stock_batches")
+  .select(`
+    qty_remaining,
+    rate_per_kg,
+    powder: powders ( powder_name )
+  `)
+  .eq("company_id", companyId)
+
 
     .eq("company_id", companyId)
     .gt("qty_remaining", 0)
@@ -51,6 +53,7 @@ export async function loadInventoryGrouped(companyId: string) {
 
   data?.forEach(row => {
     const powder = row.powder?.powder_name ?? "—"
+
 
 
     const qty = Number(row.qty_remaining)
