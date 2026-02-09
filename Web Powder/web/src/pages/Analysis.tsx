@@ -7,7 +7,7 @@ type KPI = {
   value: string
 }
 
-const API_BASE = "http://localhost:8000"
+const API_BASE = "https://powder-managment-1.onrender.com"
 
 export default function Analysis() {
   const { session } = useSession()
