@@ -27,14 +27,14 @@ export default function Settings() {
     );
   }
 
-  const tabs: { id: Tab; label: string; visible: boolean }[] = [
-    { id: "profile", label: "My Profile", visible: true },
-    { id: "powders", label: "Powders", visible: isOwner },
-    { id: "clients", label: "Clients", visible: isOwner },
-    { id: "suppliers", label: "Suppliers", visible: isOwner },
-    { id: "users", label: "Users", visible: isOwner },
-    { id: "company", label: "Company Profile", visible: isOwner },
-  ].filter(t => t.visible);
+  const tabs = [
+  { id: "profile" as const, label: "My Profile", visible: true },
+  { id: "powders" as const, label: "Powders", visible: isOwner },
+  { id: "clients" as const, label: "Clients", visible: isOwner },
+  { id: "suppliers" as const, label: "Suppliers", visible: isOwner },
+  { id: "users" as const, label: "Users", visible: isOwner },
+  { id: "company" as const, label: "Company Profile", visible: isOwner },
+] satisfies { id: Tab; label: string; visible: boolean }[];
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 sm:p-6 lg:p-8">
