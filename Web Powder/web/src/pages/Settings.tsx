@@ -450,46 +450,61 @@ function PowdersTab() {
   };
 
   const addPowder = async () => {
-    if (!newPowderName.trim()) {
-      setMessage({ text: "Powder name is required", type: "error" });
-      return;
-    }
+  if (!newPowderName.trim()) {
+    setMessage({ text: "Powder name is required", type: "error" });
+    return;
+  }
 
-    if (!session?.companyId) {
-      setMessage({ text: "No company selected – please log in again", type: "error" });
-      return;
-    }
+  if (!session?.companyId || !session?.userId) {
+    setMessage({ text: "Session incomplete – please log in again", type: "error" });
+    return;
+  }
 
-    setLoading(true);
-    setMessage(null);
+  setLoading(true);
+  setMessage(null);
 
-    try {
-      const { error } = await supabase
-        .from("powders")
-        .insert({
-          powder_name: newPowderName.trim(),
-          company_id: session.companyId,  // ← this prevents 400 error
-        });
+  try {
+    // 1. Insert powder
+    const { data: newPowder, error: insertError } = await supabase
+      .from("powders")
+      .insert({
+        powder_name: newPowderName.trim(),
+        company_id: session.companyId,
+      })
+      .select("id")
+      .single();
 
-      if (error) throw error;
+    if (insertError) throw insertError;
 
-      setNewPowderName("");
-      loadPowders();
-      setMessage({ text: "Powder added successfully", type: "success" });
-      setTimeout(() => setMessage(null), 4000);
-    } catch (err: any) {
-      console.error("Add powder error:", err);
-      setMessage({
-        text: err.message?.includes("duplicate") 
-          ? "A powder with this name already exists" 
-          : "Failed to add powder. Please try again.",
-        type: "error",
+    // 2. Manually log to activity_log with real user_id
+    const { error: logError } = await supabase
+      .from("activity_log")
+      .insert({
+        company_id: session.companyId,
+        user_id: session.userId,              // ← this makes user_id NOT NULL
+        event_type: "CREATE",
+        ref_type: "POWDER",
+        ref_id: newPowder.id,
+        created_at: new Date().toISOString(),
+        meta: { powder_name: newPowderName.trim() },
       });
-    } finally {
-      setLoading(false);
-    }
-  };
 
+    if (logError) console.warn("Activity log failed, but powder added:", logError);
+
+    setNewPowderName("");
+    loadPowders();
+    setMessage({ text: "Powder added successfully", type: "success" });
+    setTimeout(() => setMessage(null), 4000);
+  } catch (err: any) {
+    console.error("Add powder error:", err);
+    setMessage({
+      text: err.message || "Failed to add powder",
+      type: "error",
+    });
+  } finally {
+    setLoading(false);
+  }
+};
   return (
     <div className="space-y-6">
       <h2 className="text-xl font-semibold text-gray-900">Manage Powders</h2>
@@ -584,34 +599,58 @@ function ClientsTab() {
   };
 
   const addClient = async () => {
-    if (!newClientName.trim()) {
-      setMessage({ text: "Client name is required", type: "error" });
-      return;
-    }
+  if (!newClientName.trim()) {
+    setMessage({ text: "Client name is required", type: "error" });
+    return;
+  }
 
-    setLoading(true);
-    setMessage(null);
+  if (!session?.companyId || !session?.userId) {
+    setMessage({ text: "Session incomplete – please log in again", type: "error" });
+    return;
+  }
 
-    try {
-      const { error } = await supabase
-        .from("clients")
-        .insert({
-          client_name: newClientName.trim(),
-          company_id: session?.companyId,
-        });
+  setLoading(true);
+  setMessage(null);
 
-      if (error) throw error;
+  try {
+    // 1. Insert client
+    const { data: newClient, error: insertError } = await supabase
+      .from("clients")
+      .insert({
+        client_name: newClientName.trim(),
+        company_id: session.companyId,
+      })
+      .select("id")
+      .single();
 
-      setNewClientName("");
-      loadClients();
-      setMessage({ text: "Client added successfully", type: "success" });
-      setTimeout(() => setMessage(null), 4000);
-    } catch (err: any) {
-      setMessage({ text: err.message || "Failed to add client", type: "error" });
-    } finally {
-      setLoading(false);
-    }
-  };
+    if (insertError) throw insertError;
+
+    // 2. Manually log with real user_id
+    const { error: logError } = await supabase
+      .from("activity_log")
+      .insert({
+        company_id: session.companyId,
+        user_id: session.userId,              // ← now filled
+        event_type: "CREATE",
+        ref_type: "CLIENT",
+        ref_id: newClient.id,
+        created_at: new Date().toISOString(),
+        meta: { client_name: newClientName.trim() },
+      });
+
+    if (logError) console.warn("Activity log failed, but client added:", logError);
+
+    setNewClientName("");
+    loadClients();
+    setMessage({ text: "Client added successfully", type: "success" });
+    setTimeout(() => setMessage(null), 4000);
+  } catch (err: any) {
+    console.error("Add client error:", err);
+    setMessage({ text: err.message || "Failed to add client", type: "error" });
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <div className="space-y-6">
