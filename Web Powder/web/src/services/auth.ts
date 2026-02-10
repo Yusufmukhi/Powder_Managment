@@ -1,23 +1,30 @@
+import { Role } from "../context/session.context";
 import { supabase } from "../lib/supabase"
 
 export async function loginUser(username: string, password: string) {
-  // 1️⃣ fetch user record
-  const { data, error } = await supabase
+  const { data: user, error } = await supabase
     .from("users")
-    .select("id, company_id, role, password, must_change_password")
+    .select("id, company_id, username, role, full_name, password")
     .eq("username", username)
-    .single()
+    .single();
 
-  if (error || !data) {
-    throw new Error("Invalid username or password")
+  if (error || !user) {
+    throw new Error("User not found");
   }
 
-  // ⚠️ Password check should be done via Edge Function later
-  // TEMP (development): allow login if user exists
+  // Compare password (you must use bcrypt compare)
+  const bcrypt = await import('bcryptjs');
+  const isMatch = await bcrypt.compare(password, user.password);
+
+  if (!isMatch) {
+    throw new Error("Invalid password");
+  }
+
   return {
-    userId: data.id,
-    companyId: data.company_id,
-    role: data.role,
-    mustChangePassword: data.must_change_password
-  }
+    userId: user.id,
+    companyId: user.company_id,
+    username: user.username,
+    role: user.role as Role,
+    fullName: user.full_name || "",
+  };
 }
