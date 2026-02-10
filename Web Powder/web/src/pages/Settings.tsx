@@ -607,10 +607,7 @@ function ClientsTab() {
       setMessage({ text: "Client added successfully", type: "success" });
       setTimeout(() => setMessage(null), 4000);
     } catch (err: any) {
-      setMessage({
-        text: err.message?.includes("duplicate") ? "Client name already exists" : "Failed to add client",
-        type: "error",
-      });
+      setMessage({ text: err.message || "Failed to add client", type: "error" });
     } finally {
       setLoading(false);
     }
@@ -621,11 +618,7 @@ function ClientsTab() {
       <h2 className="text-xl font-semibold text-gray-900">Manage Clients</h2>
 
       {message && (
-        <div
-          className={`p-4 rounded-lg border-l-4 ${
-            message.type === "success" ? "bg-green-50 border-green-500 text-green-700" : "bg-red-50 border-red-500 text-red-700"
-          }`}
-        >
+        <div className={`p-4 rounded-lg border-l-4 ${message.type === "success" ? "bg-green-50 border-green-500 text-green-700" : "bg-red-50 border-red-500 text-red-700"}`}>
           {message.text}
         </div>
       )}
@@ -676,7 +669,6 @@ function ClientsTab() {
     </div>
   );
 }
-
 function SuppliersTab() {
   return <div className="py-10 text-center text-gray-600">Suppliers management coming soon...</div>;
 }
