@@ -419,6 +419,8 @@ function CompanyProfileTab() {
 // Powders Tab (Owner only) – basic CRUD skeleton
 // ────────────────────────────────────────────────
 function PowdersTab() {
+  const { session } = useSession();  // ← ADD THIS LINE (now session is available)
+
   const [powders, setPowders] = useState<any[]>([]);
   const [newPowderName, setNewPowderName] = useState("");
   const [loading, setLoading] = useState(false);
@@ -426,40 +428,66 @@ function PowdersTab() {
 
   useEffect(() => {
     loadPowders();
-  }, []);
+  }, [session?.companyId]);  // ← depend on companyId
 
   const loadPowders = async () => {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from("powders")
-      .select("id, powder_name, created_at")
-      .order("powder_name");
+    if (!session?.companyId) return;
 
-    if (error) {
-      setMessage({ text: "Failed to load powders", type: "error" });
-    } else {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("powders")
+        .select("id, powder_name, created_at")
+        .eq("company_id", session.companyId)  // ← filter by company
+        .order("powder_name");
+
+      if (error) throw error;
       setPowders(data || []);
+    } catch (err: any) {
+      setMessage({ text: "Failed to load powders", type: "error" });
     }
     setLoading(false);
   };
 
   const addPowder = async () => {
-    if (!newPowderName.trim()) return;
+    if (!newPowderName.trim()) {
+      setMessage({ text: "Powder name is required", type: "error" });
+      return;
+    }
+
+    if (!session?.companyId) {
+      setMessage({ text: "No company selected – please log in again", type: "error" });
+      return;
+    }
 
     setLoading(true);
-    const { error } = await supabase
-      .from("powders")
-      .insert({ powder_name: newPowderName.trim() });
+    setMessage(null);
 
-    if (error) {
-      setMessage({ text: "Failed to add powder", type: "error" });
-    } else {
+    try {
+      const { error } = await supabase
+        .from("powders")
+        .insert({
+          powder_name: newPowderName.trim(),
+          company_id: session.companyId,  // ← this prevents 400 error
+        });
+
+      if (error) throw error;
+
       setNewPowderName("");
       loadPowders();
       setMessage({ text: "Powder added successfully", type: "success" });
       setTimeout(() => setMessage(null), 4000);
+    } catch (err: any) {
+      console.error("Add powder error:", err);
+      setMessage({
+        text: err.message?.includes("duplicate") 
+          ? "A powder with this name already exists" 
+          : "Failed to add powder. Please try again.",
+        type: "error",
+      });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (
@@ -483,18 +511,21 @@ function PowdersTab() {
           onChange={e => setNewPowderName(e.target.value)}
           placeholder="Enter new powder name"
           className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
+          disabled={loading}
         />
         <button
           onClick={addPowder}
           disabled={loading || !newPowderName.trim()}
-          className="bg-blue-600 text-white px-5 py-2 rounded-lg disabled:bg-gray-400"
+          className="bg-blue-600 text-white px-5 py-2 rounded-lg disabled:bg-gray-400 disabled:cursor-not-allowed"
         >
-          Add Powder
+          {loading ? "Adding..." : "Add Powder"}
         </button>
       </div>
 
       {loading ? (
         <div className="text-center py-10 text-gray-500">Loading powders...</div>
+      ) : powders.length === 0 ? (
+        <div className="text-center py-10 text-gray-500">No powders added yet</div>
       ) : (
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
@@ -507,7 +538,7 @@ function PowdersTab() {
             <tbody className="bg-white divide-y divide-gray-200">
               {powders.map(p => (
                 <tr key={p.id}>
-                  <td className="px-6 py-4 whitespace-nowrap">{p.powder_name}</td>
+                  <td className="px-6 py-4 whitespace-nowrap font-medium">{p.powder_name}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {new Date(p.created_at).toLocaleDateString()}
                   </td>
@@ -525,9 +556,125 @@ function PowdersTab() {
 // Clients / Suppliers / Users Tabs (skeleton – copy-paste pattern)
 // ────────────────────────────────────────────────
 function ClientsTab() {
-  // Same structure as PowdersTab – just change table name to "clients" and fields (client_name)
-  // Add your own code here or let me know if you want it filled
-  return <div className="py-10 text-center text-gray-600">Clients management coming soon...</div>;
+  const { session } = useSession();
+  const [clients, setClients] = useState<any[]>([]);
+  const [newClientName, setNewClientName] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
+
+  useEffect(() => {
+    loadClients();
+  }, [session?.companyId]);
+
+  const loadClients = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("clients")
+        .select("id, client_name, created_at")
+        .eq("company_id", session?.companyId)
+        .order("client_name");
+
+      if (error) throw error;
+      setClients(data || []);
+    } catch (err: any) {
+      setMessage({ text: "Failed to load clients", type: "error" });
+    }
+    setLoading(false);
+  };
+
+  const addClient = async () => {
+    if (!newClientName.trim()) {
+      setMessage({ text: "Client name is required", type: "error" });
+      return;
+    }
+
+    setLoading(true);
+    setMessage(null);
+
+    try {
+      const { error } = await supabase
+        .from("clients")
+        .insert({
+          client_name: newClientName.trim(),
+          company_id: session?.companyId,
+        });
+
+      if (error) throw error;
+
+      setNewClientName("");
+      loadClients();
+      setMessage({ text: "Client added successfully", type: "success" });
+      setTimeout(() => setMessage(null), 4000);
+    } catch (err: any) {
+      setMessage({
+        text: err.message?.includes("duplicate") ? "Client name already exists" : "Failed to add client",
+        type: "error",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-xl font-semibold text-gray-900">Manage Clients</h2>
+
+      {message && (
+        <div
+          className={`p-4 rounded-lg border-l-4 ${
+            message.type === "success" ? "bg-green-50 border-green-500 text-green-700" : "bg-red-50 border-red-500 text-red-700"
+          }`}
+        >
+          {message.text}
+        </div>
+      )}
+
+      <div className="flex flex-col sm:flex-row gap-3">
+        <input
+          type="text"
+          value={newClientName}
+          onChange={e => setNewClientName(e.target.value)}
+          placeholder="Enter new client name"
+          className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
+        />
+        <button
+          onClick={addClient}
+          disabled={loading || !newClientName.trim()}
+          className="bg-blue-600 text-white px-5 py-2 rounded-lg disabled:bg-gray-400"
+        >
+          Add Client
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="text-center py-10 text-gray-500">Loading clients...</div>
+      ) : clients.length === 0 ? (
+        <div className="text-center py-10 text-gray-500">No clients added yet</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Client Name</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created At</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {clients.map(c => (
+                <tr key={c.id}>
+                  <td className="px-6 py-4 whitespace-nowrap">{c.client_name}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {new Date(c.created_at).toLocaleDateString()}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function SuppliersTab() {
