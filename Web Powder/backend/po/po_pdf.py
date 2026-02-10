@@ -17,20 +17,31 @@ from io import BytesIO
 
 
 # ---------------- FONT SETUP ----------------
-FONT_DIR = os.path.join(os.path.abspath(os.path.dirname(__file__)), "..", "..", "assets", "fonts")
+from utils.fonts import get_font_path
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfbase.pdfmetrics import registerFontFamily
 
-pdfmetrics.registerFont(TTFont("DejaVuSans", os.path.join(FONT_DIR, "DejaVuSans.ttf")))
-pdfmetrics.registerFont(TTFont("DejaVuSans-Bold", os.path.join(FONT_DIR, "DejaVuSans-Bold.ttf")))
+def register_fonts():
+    pdfmetrics.registerFont(
+        TTFont("DejaVuSans", get_font_path("DejaVuSans.ttf"))
+    )
+    pdfmetrics.registerFont(
+        TTFont("DejaVuSans-Bold", get_font_path("DejaVuSans-Bold.ttf"))
+    )
+    registerFontFamily(
+        family="DejaVuSans",
+        normal="DejaVuSans",
+        bold="DejaVuSans-Bold"
+    )
 
-registerFontFamily(
-    family="DejaVuSans",
-    normal="DejaVuSans",
-    bold="DejaVuSans-Bold"
-)
-
+# Then in generate_po_pdf function — call it once at the beginning:
+def generate_po_pdf(po_id: str) -> str:
+    register_fonts()   # ← Add this line here
 
 # ---------------- PDF GENERATOR ----------------
 def generate_po_pdf(po_id: str) -> str:
+    register_fonts()
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
     tmp_path = tmp.name
     tmp.close()
