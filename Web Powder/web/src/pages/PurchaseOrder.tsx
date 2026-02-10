@@ -24,7 +24,7 @@ type PO = {
   status: string
 }
 
-const API = "http://localhost:8000"
+const API =  "https://powder-managment-1.onrender.com"
 
 export default function PurchaseOrder() {
   const { session } = useSession()
