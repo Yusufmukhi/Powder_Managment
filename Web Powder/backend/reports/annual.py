@@ -140,12 +140,13 @@ def generate_annual_pdf(company_id: str, fy_start_year: int) -> str:
     end   = datetime(fy_start_year + 1, 3, 31, 23, 59, 59)
 
     # Fast count query — no need to fetch full rows
-    count_result = supabase.table("usage_fifo") \
-        .select("id", count="exact") \
-        .eq("company_id", company_id) \
-        .gte("usage.used_at", start.isoformat()) \
-        .lt("usage.used_at", end.isoformat()) \
-        .execute()
+    count_result = supabase.table("usage") \
+    .select("id", count="exact") \
+    .eq("company_id", company_id) \
+    .gte("used_at", start.isoformat()) \
+    .lt("used_at", end.isoformat()) \
+    .execute()
+
 
     has_data = count_result.count > 0 if hasattr(count_result, 'count') else False
 

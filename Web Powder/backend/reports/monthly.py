@@ -194,12 +194,13 @@ def generate_monthly_pdf(company_id: str, year: int, month: int) -> str:
     curr_end = next_month - timedelta(seconds=1)
 
     # Fast count query
-    count_result = supabase.table("usage_fifo") \
-        .select("id", count="exact") \
-        .eq("company_id", company_id) \
-        .gte("usage.used_at", curr_start.isoformat()) \
-        .lt("usage.used_at", curr_end.isoformat()) \
-        .execute()
+    count_result = supabase.table("usage") \
+    .select("id", count="exact") \
+    .eq("company_id", company_id) \
+    .gte("used_at", curr_start.isoformat()) \
+    .lt("used_at", curr_end.isoformat()) \
+    .execute()
+
 
     has_data = count_result.count > 0 if hasattr(count_result, 'count') else False
 
