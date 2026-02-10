@@ -7,7 +7,7 @@ def get_fifo_data(company_id: str, start_dt: datetime, end_dt: datetime):
     Returns FIFO-applied usage rows with:
     qty, cost, supplier, powder, month, date
     """
-    # Step 1: Get usage_fifo rows + usage_id (no filter on usage table yet)
+    # Step 1: Get all usage_fifo rows for the company (no date filter here)
     fifo_result = (
         supabase.table("usage_fifo")
         .select("qty_used, rate_per_kg, usage_id")
@@ -17,11 +17,13 @@ def get_fifo_data(company_id: str, start_dt: datetime, end_dt: datetime):
 
     fifo_rows = fifo_result.data or []
 
+    print(f"[DEBUG] Fetched {len(fifo_rows)} usage_fifo rows for company {company_id}")
+
     if not fifo_rows:
         return []
 
-    # Step 2: Get all related usage rows (with date filter here)
-    usage_ids = [r["usage_id"] for r in fifo_rows]
+    # Step 2: Get matching usage rows with date filter + joins
+    usage_ids = [row["usage_id"] for row in fifo_rows]
 
     usage_result = (
         supabase.table("usage")
@@ -39,7 +41,9 @@ def get_fifo_data(company_id: str, start_dt: datetime, end_dt: datetime):
         .execute()
     )
 
-    # Build map: usage_id → full usage row with nested powder/supplier
+    print(f"[DEBUG] Fetched {len(usage_result.data or [])} usage rows in date range")
+
+    # Create lookup: usage_id → full usage data
     usage_map = {u["id"]: u for u in usage_result.data or []}
 
     output = []
@@ -47,20 +51,24 @@ def get_fifo_data(company_id: str, start_dt: datetime, end_dt: datetime):
     for fifo in fifo_rows:
         usage = usage_map.get(fifo["usage_id"])
         if not usage:
-            continue  # skip if usage row was filtered out by date
+            continue  # this usage was filtered out by date
 
         qty = float(fifo.get("qty_used", 0))
         rate = float(fifo.get("rate_per_kg", 0))
         cost = qty * rate
 
-        powder = usage.get("powders", {}).get("powder_name", "Unknown")
-        supplier = usage.get("suppliers", {}).get("supplier_name", "Unknown")
+        powder = usage.get("powders", {}).get("powder_name", "Unknown Powder")
+        supplier = usage.get("suppliers", {}).get("supplier_name", "Unknown Supplier")
 
         used_at_str = usage.get("used_at")
         if not used_at_str:
             continue
 
-        dt = datetime.fromisoformat(used_at_str.replace("Z", "+00:00"))
+        try:
+            dt = datetime.fromisoformat(used_at_str.replace("Z", "+00:00"))
+        except ValueError:
+            print(f"[WARN] Invalid used_at format: {used_at_str}")
+            continue
 
         output.append({
             "qty": qty,
@@ -71,4 +79,5 @@ def get_fifo_data(company_id: str, start_dt: datetime, end_dt: datetime):
             "date": dt
         })
 
+    print(f"[DEBUG] Returning {len(output)} valid FIFO rows")
     return output
