@@ -4,10 +4,10 @@ from config import supabase
 
 def get_fifo_data(company_id: str, start_dt: datetime, end_dt: datetime):
     """
-    Returns FIFO-applied usage rows with:
-    qty, cost, supplier, powder, month, date
+    Safe two-step fetch to avoid Supabase join errors (PGRST108).
+    Returns FIFO usage rows with qty, cost, powder, supplier, month, date.
     """
-    # Step 1: Get all usage_fifo rows for the company (no date filter here)
+    # Step 1: Get FIFO rows (only basic columns – no joins)
     fifo_result = (
         supabase.table("usage_fifo")
         .select("qty_used, rate_per_kg, usage_id")
@@ -17,13 +17,18 @@ def get_fifo_data(company_id: str, start_dt: datetime, end_dt: datetime):
 
     fifo_rows = fifo_result.data or []
 
-    print(f"[DEBUG] Fetched {len(fifo_rows)} usage_fifo rows for company {company_id}")
-
     if not fifo_rows:
+        print(f"[FIFO] No rows for company {company_id}")
         return []
 
+    print(f"[FIFO] Fetched {len(fifo_rows)} usage_fifo rows")
+
     # Step 2: Get matching usage rows with date filter + joins
-    usage_ids = [row["usage_id"] for row in fifo_rows]
+    usage_ids = [row["usage_id"] for row in fifo_rows if row.get("usage_id")]
+
+    if not usage_ids:
+        print("[FIFO] No valid usage_ids found")
+        return []
 
     usage_result = (
         supabase.table("usage")
@@ -41,17 +46,18 @@ def get_fifo_data(company_id: str, start_dt: datetime, end_dt: datetime):
         .execute()
     )
 
-    print(f"[DEBUG] Fetched {len(usage_result.data or [])} usage rows in date range")
+    usage_rows = usage_result.data or []
+    print(f"[FIFO] Fetched {len(usage_rows)} usage rows in date range")
 
-    # Create lookup: usage_id → full usage data
-    usage_map = {u["id"]: u for u in usage_result.data or []}
+    # Map usage_id → usage row
+    usage_map = {u["id"]: u for u in usage_rows}
 
     output = []
 
     for fifo in fifo_rows:
         usage = usage_map.get(fifo["usage_id"])
         if not usage:
-            continue  # this usage was filtered out by date
+            continue  # filtered by date or missing
 
         qty = float(fifo.get("qty_used", 0))
         rate = float(fifo.get("rate_per_kg", 0))
@@ -66,8 +72,8 @@ def get_fifo_data(company_id: str, start_dt: datetime, end_dt: datetime):
 
         try:
             dt = datetime.fromisoformat(used_at_str.replace("Z", "+00:00"))
-        except ValueError:
-            print(f"[WARN] Invalid used_at format: {used_at_str}")
+        except ValueError as e:
+            print(f"[WARN] Invalid used_at: {used_at_str} - {e}")
             continue
 
         output.append({
@@ -79,5 +85,5 @@ def get_fifo_data(company_id: str, start_dt: datetime, end_dt: datetime):
             "date": dt
         })
 
-    print(f"[DEBUG] Returning {len(output)} valid FIFO rows")
+    print(f"[FIFO] Returning {len(output)} valid rows after filtering")
     return output
