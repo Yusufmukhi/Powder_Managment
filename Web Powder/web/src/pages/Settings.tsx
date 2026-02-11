@@ -721,7 +721,7 @@ function SuppliersTab() {
   const [newPhone, setNewPhone] = useState("");
   const [newEmail, setNewEmail] = useState("");
   const [newGstin, setNewGstin] = useState("");
-  const [editingSupplier, setEditingSupplier] = useState<any | null>(null); // for edit mode
+  const [editingSupplier, setEditingSupplier] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
@@ -778,7 +778,7 @@ function SuppliersTab() {
       };
 
       if (editingSupplier) {
-        // UPDATE existing supplier
+        // UPDATE
         const { error: updateError } = await supabase
           .from("suppliers")
           .update(supplierData)
@@ -799,7 +799,7 @@ function SuppliersTab() {
           meta: supplierData,
         });
       } else {
-        // INSERT new supplier
+        // INSERT
         const { data: newSupplier, error: insertError } = await supabase
           .from("suppliers")
           .insert(supplierData)
@@ -834,7 +834,7 @@ function SuppliersTab() {
       setEditingSupplier(null);
 
       loadSuppliers();
-      setMessage({ text: editingSupplier ? "Supplier updated successfully" : "Supplier added successfully", type: "success" });
+      setMessage({ text: editingSupplier ? "Supplier updated" : "Supplier added", type: "success" });
       setTimeout(() => setMessage(null), 4000);
     } catch (err: any) {
       console.error("Supplier save error:", err);
@@ -844,6 +844,45 @@ function SuppliersTab() {
           : err.message || "Failed to save supplier",
         type: "error",
       });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deleteSupplier = async (supplierId: string, supplierName: string) => {
+    if (!confirm(`Are you sure you want to delete "${supplierName}"? This cannot be undone.`)) {
+      return;
+    }
+
+    setLoading(true);
+    setMessage(null);
+
+    try {
+      // 1. Delete supplier
+      const { error: deleteError } = await supabase
+        .from("suppliers")
+        .delete()
+        .eq("id", supplierId);
+
+      if (deleteError) throw deleteError;
+
+      // 2. Log DELETE
+      await supabase.from("activity_log").insert({
+        company_id: session.companyId,
+        user_id: session.userId,
+        event_type: "DELETE",
+        ref_type: "SUPPLIER",
+        ref_id: supplierId,
+        created_at: new Date().toISOString(),
+        meta: { supplier_name: supplierName },
+      });
+
+      loadSuppliers();
+      setMessage({ text: "Supplier deleted successfully", type: "success" });
+      setTimeout(() => setMessage(null), 4000);
+    } catch (err: any) {
+      console.error("Delete supplier error:", err);
+      setMessage({ text: err.message || "Failed to delete supplier", type: "error" });
     } finally {
       setLoading(false);
     }
@@ -1044,12 +1083,18 @@ function SuppliersTab() {
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {new Date(s.created_at).toLocaleDateString()}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-6 py-4 whitespace-nowrap space-x-3">
                     <button
                       onClick={() => startEdit(s)}
-                      className="text-blue-600 hover:text-blue-800 text-sm font-medium mr-3"
+                      className="text-blue-600 hover:text-blue-800 text-sm font-medium"
                     >
                       Edit
+                    </button>
+                    <button
+                      onClick={() => deleteSupplier(s.id, s.supplier_name)}
+                      className="text-red-600 hover:text-red-800 text-sm font-medium"
+                    >
+                      Delete
                     </button>
                   </td>
                 </tr>
