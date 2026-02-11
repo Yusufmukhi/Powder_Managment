@@ -713,9 +713,22 @@ function ClientsTab() {
 function SuppliersTab() {
   const { session } = useSession();
   const [suppliers, setSuppliers] = useState<any[]>([]);
-  const [newSupplierName, setNewSupplierName] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
+
+  // Form states for adding/editing
+  const [isEditing, setIsEditing] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [formData, setFormData] = useState({
+    supplier_name: "",
+    address: "",
+    city: "",
+    state: "",
+    pincode: "",
+    phone: "",
+    email: "",
+    gstin: "",
+  });
 
   useEffect(() => {
     loadSuppliers();
@@ -736,12 +749,33 @@ function SuppliersTab() {
       setSuppliers(data || []);
     } catch (err: any) {
       setMessage({ text: "Failed to load suppliers", type: "error" });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  const addSupplier = async () => {
-    if (!newSupplierName.trim()) {
+  const resetForm = () => {
+    setFormData({
+      supplier_name: "",
+      address: "",
+      city: "",
+      state: "",
+      pincode: "",
+      phone: "",
+      email: "",
+      gstin: "",
+    });
+    setIsEditing(false);
+    setEditingId(null);
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleSubmit = async () => {
+    if (!formData.supplier_name.trim()) {
       setMessage({ text: "Supplier name is required", type: "error" });
       return;
     }
@@ -755,49 +789,98 @@ function SuppliersTab() {
     setMessage(null);
 
     try {
-      // 1. Insert supplier
-      const { data: newSupplier, error: insertError } = await supabase
-        .from("suppliers")
-        .insert({
-          supplier_name: newSupplierName.trim(),
-          company_id: session.companyId,
-          // Optional: add other fields if your form has them later
-        })
-        .select("id")
-        .single();
+      let newSupplierId: string;
 
-      if (insertError) throw insertError;
+      if (isEditing && editingId) {
+        // Update existing supplier
+        const { error: updateError } = await supabase
+          .from("suppliers")
+          .update({
+            supplier_name: formData.supplier_name.trim(),
+            address: formData.address.trim() || null,
+            city: formData.city.trim() || null,
+            state: formData.state.trim() || null,
+            pincode: formData.pincode.trim() || null,
+            phone: formData.phone.trim() || null,
+            email: formData.email.trim() || null,
+            gstin: formData.gstin.trim().toUpperCase() || null,
+          })
+          .eq("id", editingId);
 
-      // 2. Manually log to activity_log with real user_id
-      const { error: logError } = await supabase
-        .from("activity_log")
-        .insert({
+        if (updateError) throw updateError;
+        newSupplierId = editingId;
+
+        // Log update
+        await supabase.from("activity_log").insert({
           company_id: session.companyId,
-          user_id: session.userId,                    // ← real user ID
+          user_id: session.userId,
+          event_type: "UPDATE",
+          ref_type: "SUPPLIER",
+          ref_id: editingId,
+          created_at: new Date().toISOString(),
+          meta: { supplier_name: formData.supplier_name.trim() },
+        });
+      } else {
+        // Create new supplier
+        const { data: newSupplier, error: insertError } = await supabase
+          .from("suppliers")
+          .insert({
+            supplier_name: formData.supplier_name.trim(),
+            company_id: session.companyId,
+            address: formData.address.trim() || null,
+            city: formData.city.trim() || null,
+            state: formData.state.trim() || null,
+            pincode: formData.pincode.trim() || null,
+            phone: formData.phone.trim() || null,
+            email: formData.email.trim() || null,
+            gstin: formData.gstin.trim().toUpperCase() || null,
+          })
+          .select("id")
+          .single();
+
+        if (insertError) throw insertError;
+        newSupplierId = newSupplier.id;
+
+        // Log create
+        await supabase.from("activity_log").insert({
+          company_id: session.companyId,
+          user_id: session.userId,
           event_type: "CREATE",
           ref_type: "SUPPLIER",
-          ref_id: newSupplier.id,
+          ref_id: newSupplierId,
           created_at: new Date().toISOString(),
-          meta: { supplier_name: newSupplierName.trim() },
+          meta: { supplier_name: formData.supplier_name.trim() },
         });
-
-      if (logError) {
-        console.warn("Activity log failed, but supplier added:", logError);
       }
 
-      setNewSupplierName("");
+      resetForm();
       loadSuppliers();
-      setMessage({ text: "Supplier added successfully", type: "success" });
+      setMessage({ text: `Supplier ${isEditing ? "updated" : "added"} successfully`, type: "success" });
       setTimeout(() => setMessage(null), 4000);
     } catch (err: any) {
-      console.error("Add supplier error:", err);
+      console.error("Supplier operation error:", err);
       setMessage({
-        text: err.message || "Failed to add supplier",
+        text: err.message || `Failed to ${isEditing ? "update" : "add"} supplier`,
         type: "error",
       });
     } finally {
       setLoading(false);
     }
+  };
+
+  const startEdit = (supplier: any) => {
+    setFormData({
+      supplier_name: supplier.supplier_name || "",
+      address: supplier.address || "",
+      city: supplier.city || "",
+      state: supplier.state || "",
+      pincode: supplier.pincode || "",
+      phone: supplier.phone || "",
+      email: supplier.email || "",
+      gstin: supplier.gstin || "",
+    });
+    setEditingId(supplier.id);
+    setIsEditing(true);
   };
 
   return (
@@ -814,22 +897,134 @@ function SuppliersTab() {
         </div>
       )}
 
-      <div className="flex flex-col sm:flex-row gap-3">
-        <input
-          type="text"
-          value={newSupplierName}
-          onChange={(e) => setNewSupplierName(e.target.value)}
-          placeholder="Enter new supplier name"
-          className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
-          disabled={loading}
-        />
-        <button
-          onClick={addSupplier}
-          disabled={loading || !newSupplierName.trim()}
-          className="bg-blue-600 text-white px-5 py-2 rounded-lg disabled:bg-gray-400 disabled:cursor-not-allowed"
-        >
-          {loading ? "Adding..." : "Add Supplier"}
-        </button>
+      {/* Add/Edit Form */}
+      <div className="bg-gray-50 p-5 rounded-lg border border-gray-200">
+        <h3 className="text-lg font-medium mb-4">{isEditing ? "Edit Supplier" : "Add New Supplier"}</h3>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Supplier Name *</label>
+            <input
+              type="text"
+              name="supplier_name"
+              value={formData.supplier_name}
+              onChange={handleInputChange}
+              placeholder="Enter supplier name"
+              className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
+              disabled={loading}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+            <input
+              type="text"
+              name="address"
+              value={formData.address}
+              onChange={handleInputChange}
+              placeholder="Street address"
+              className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
+              disabled={loading}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
+            <input
+              type="text"
+              name="city"
+              value={formData.city}
+              onChange={handleInputChange}
+              placeholder="City"
+              className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
+              disabled={loading}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">State</label>
+            <input
+              type="text"
+              name="state"
+              value={formData.state}
+              onChange={handleInputChange}
+              placeholder="State"
+              className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
+              disabled={loading}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Pincode</label>
+            <input
+              type="text"
+              name="pincode"
+              value={formData.pincode}
+              onChange={handleInputChange}
+              placeholder="Pincode"
+              className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
+              disabled={loading}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+            <input
+              type="text"
+              name="phone"
+              value={formData.phone}
+              onChange={handleInputChange}
+              placeholder="Phone number"
+              className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
+              disabled={loading}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+            <input
+              type="email"
+              name="email"
+              value={formData.email}
+              onChange={handleInputChange}
+              placeholder="Email address"
+              className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
+              disabled={loading}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">GSTIN</label>
+            <input
+              type="text"
+              name="gstin"
+              value={formData.gstin}
+              onChange={handleInputChange}
+              placeholder="GSTIN number"
+              className="w-full border border-gray-300 rounded-lg px-4 py-2 uppercase focus:ring-2 focus:ring-blue-500"
+              disabled={loading}
+            />
+          </div>
+        </div>
+
+        <div className="mt-6 flex gap-4">
+          <button
+            onClick={addSupplier}
+            disabled={loading}
+            className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition disabled:bg-gray-400"
+          >
+            {loading ? "Saving..." : (isEditing ? "Update Supplier" : "Add Supplier")}
+          </button>
+
+          {isEditing && (
+            <button
+              onClick={resetForm}
+              className="bg-gray-500 text-white px-6 py-2 rounded-lg hover:bg-gray-600 transition"
+            >
+              Cancel Edit
+            </button>
+          )}
+        </div>
       </div>
 
       {loading ? (
@@ -842,15 +1037,30 @@ function SuppliersTab() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Supplier Name</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">City</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Phone</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">GSTIN</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created At</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {suppliers.map(s => (
                 <tr key={s.id}>
                   <td className="px-6 py-4 whitespace-nowrap font-medium">{s.supplier_name}</td>
+                  <td className="px-6 py-4 whitespace-nowrap">{s.city || "—"}</td>
+                  <td className="px-6 py-4 whitespace-nowrap">{s.phone || "—"}</td>
+                  <td className="px-6 py-4 whitespace-nowrap">{s.gstin || "—"}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {new Date(s.created_at).toLocaleDateString()}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <button
+                      onClick={() => startEdit(s)}
+                      className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                    >
+                      Edit
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -861,7 +1071,6 @@ function SuppliersTab() {
     </div>
   );
 }
-
 function UsersTab() {
   const { session } = useSession();
   const [users, setUsers] = useState<any[]>([]);
