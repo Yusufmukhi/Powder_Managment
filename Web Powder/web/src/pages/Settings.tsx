@@ -418,17 +418,20 @@ function CompanyProfileTab() {
 // ────────────────────────────────────────────────
 // Powders Tab (Owner only) – basic CRUD skeleton
 // ────────────────────────────────────────────────
+// ────────────────────────────────────────────────
+// Powders Tab – Full CRUD (Add + Edit + Delete)
+// ────────────────────────────────────────────────
 function PowdersTab() {
-  const { session } = useSession();  // ← ADD THIS LINE (now session is available)
-
+  const { session } = useSession();
   const [powders, setPowders] = useState<any[]>([]);
   const [newPowderName, setNewPowderName] = useState("");
+  const [editingPowder, setEditingPowder] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
   useEffect(() => {
     loadPowders();
-  }, [session?.companyId]);  // ← depend on companyId
+  }, [session?.companyId]);
 
   const loadPowders = async () => {
     if (!session?.companyId) return;
@@ -437,8 +440,8 @@ function PowdersTab() {
     try {
       const { data, error } = await supabase
         .from("powders")
-        .select("id, powder_name, created_at")
-        .eq("company_id", session.companyId)  // ← filter by company
+        .select("id, powder_name, created_at, created_by")
+        .eq("company_id", session.companyId)
         .order("powder_name");
 
       if (error) throw error;
@@ -449,62 +452,143 @@ function PowdersTab() {
     setLoading(false);
   };
 
-  const addPowder = async () => {
-  if (!newPowderName.trim()) {
-    setMessage({ text: "Powder name is required", type: "error" });
-    return;
-  }
+  const savePowder = async () => {
+    if (!newPowderName.trim()) {
+      setMessage({ text: "Powder name is required", type: "error" });
+      return;
+    }
 
-  if (!session?.companyId || !session?.userId) {
-    setMessage({ text: "Session incomplete – please log in again", type: "error" });
-    return;
-  }
+    if (!session?.companyId || !session?.userId) {
+      setMessage({ text: "Session incomplete", type: "error" });
+      return;
+    }
 
-  setLoading(true);
-  setMessage(null);
+    setLoading(true);
+    setMessage(null);
 
-  try {
-    // 1. Insert powder
-    const { data: newPowder, error: insertError } = await supabase
-      .from("powders")
-      .insert({
+    try {
+      let powderId;
+
+      const powderData = {
         powder_name: newPowderName.trim(),
         company_id: session.companyId,
-      })
-      .select("id")
-      .single();
+      };
 
-    if (insertError) throw insertError;
+      if (editingPowder) {
+        // UPDATE
+        const { error: updateError } = await supabase
+          .from("powders")
+          .update(powderData)
+          .eq("id", editingPowder.id);
 
-    // 2. Manually log to activity_log with real user_id
-    const { error: logError } = await supabase
-      .from("activity_log")
-      .insert({
-        company_id: session.companyId,
-        user_id: session.userId,              // ← this makes user_id NOT NULL
-        event_type: "CREATE",
-        ref_type: "POWDER",
-        ref_id: newPowder.id,
-        created_at: new Date().toISOString(),
-        meta: { powder_name: newPowderName.trim() },
-      });
+        if (updateError) throw updateError;
 
-    if (logError) console.warn("Activity log failed, but powder added:", logError);
+        powderId = editingPowder.id;
 
+        // Log UPDATE
+        await supabase.from("activity_log").insert({
+          company_id: session.companyId,
+          user_id: session.userId,
+          event_type: "UPDATE",
+          ref_type: "POWDER",
+          ref_id: powderId,
+          created_at: new Date().toISOString(),
+          meta: powderData,
+        });
+      } else {
+        // INSERT
+        const { data: newPowder, error: insertError } = await supabase
+          .from("powders")
+          .insert(powderData)
+          .select("id")
+          .single();
+
+        if (insertError) throw insertError;
+
+        powderId = newPowder.id;
+
+        // Log CREATE
+        await supabase.from("activity_log").insert({
+          company_id: session.companyId,
+          user_id: session.userId,
+          event_type: "CREATE",
+          ref_type: "POWDER",
+          ref_id: powderId,
+          created_at: new Date().toISOString(),
+          meta: powderData,
+        });
+      }
+
+      // Reset form
+      setNewPowderName("");
+      setEditingPowder(null);
+
+      loadPowders();
+      setMessage({ text: editingPowder ? "Powder updated" : "Powder added", type: "success" });
+      setTimeout(() => setMessage(null), 4000);
+    } catch (err: any) {
+      console.error("Powder save error:", err);
+      setMessage({ text: err.message || "Failed to save powder", type: "error" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deletePowder = async (powderId: string, powderName: string) => {
+    if (!confirm(`Delete "${powderName}"? This cannot be undone.`)) return;
+
+    setLoading(true);
+    setMessage(null);
+
+    try {
+      const { error: deleteError } = await supabase
+        .from("powders")
+        .delete()
+        .eq("id", powderId);
+
+      if (deleteError) {
+        if (deleteError.code === "23503") {
+          setMessage({
+            text: `Cannot delete "${powderName}" — it is used in purchase orders or stock.`,
+            type: "error",
+          });
+        } else {
+          throw deleteError;
+        }
+      } else {
+        // Log DELETE
+        await supabase.from("activity_log").insert({
+          company_id: session.companyId,
+          user_id: session.userId,
+          event_type: "DELETE",
+          ref_type: "POWDER",
+          ref_id: powderId,
+          created_at: new Date().toISOString(),
+          meta: { powder_name: powderName },
+        });
+
+        loadPowders();
+        setMessage({ text: "Powder deleted", type: "success" });
+        setTimeout(() => setMessage(null), 4000);
+      }
+    } catch (err: any) {
+      console.error("Delete powder error:", err);
+      setMessage({ text: err.message || "Failed to delete powder", type: "error" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const startEdit = (powder: any) => {
+    setEditingPowder(powder);
+    setNewPowderName(powder.powder_name || "");
+  };
+
+  const cancelEdit = () => {
+    setEditingPowder(null);
     setNewPowderName("");
-    loadPowders();
-    setMessage({ text: "Powder added successfully", type: "success" });
-    setTimeout(() => setMessage(null), 4000);
-  } catch (err: any) {
-    console.error("Add powder error:", err);
-    setMessage({
-      text: err.message || "Failed to add powder",
-      type: "error",
-    });
-  } finally {
-    setLoading(false);
-  }
-};
+  };
+
   return (
     <div className="space-y-6">
       <h2 className="text-xl font-semibold text-gray-900">Manage Powders</h2>
@@ -519,22 +603,43 @@ function PowdersTab() {
         </div>
       )}
 
-      <div className="flex flex-col sm:flex-row gap-3">
-        <input
-          type="text"
-          value={newPowderName}
-          onChange={e => setNewPowderName(e.target.value)}
-          placeholder="Enter new powder name"
-          className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
-          disabled={loading}
-        />
-        <button
-          onClick={addPowder}
-          disabled={loading || !newPowderName.trim()}
-          className="bg-blue-600 text-white px-5 py-2 rounded-lg disabled:bg-gray-400 disabled:cursor-not-allowed"
-        >
-          {loading ? "Adding..." : "Add Powder"}
-        </button>
+      <div className="bg-gray-50 p-5 rounded-lg border border-gray-200">
+        <h3 className="text-lg font-medium mb-4">
+          {editingPowder ? "Edit Powder" : "Add New Powder"}
+        </h3>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Powder Name *</label>
+            <input
+              type="text"
+              value={newPowderName}
+              onChange={(e) => setNewPowderName(e.target.value)}
+              placeholder="Enter powder name"
+              className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
+              disabled={loading}
+            />
+          </div>
+        </div>
+
+        <div className="mt-6 flex gap-3">
+          <button
+            onClick={savePowder}
+            disabled={loading || !newPowderName.trim()}
+            className="bg-blue-600 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-blue-700 transition disabled:bg-gray-400 disabled:cursor-not-allowed"
+          >
+            {loading ? "Saving..." : editingPowder ? "Update Powder" : "Add Powder"}
+          </button>
+
+          {editingPowder && (
+            <button
+              onClick={cancelEdit}
+              className="bg-gray-500 text-white px-6 py-2.5 rounded-lg hover:bg-gray-600 transition"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
       </div>
 
       {loading ? (
@@ -548,6 +653,7 @@ function PowdersTab() {
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Powder Name</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created At</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
@@ -556,6 +662,20 @@ function PowdersTab() {
                   <td className="px-6 py-4 whitespace-nowrap font-medium">{p.powder_name}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {new Date(p.created_at).toLocaleDateString()}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap space-x-3">
+                    <button
+                      onClick={() => startEdit(p)}
+                      className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => deletePowder(p.id, p.powder_name)}
+                      className="text-red-600 hover:text-red-800 text-sm font-medium"
+                    >
+                      Delete
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -574,6 +694,7 @@ function ClientsTab() {
   const { session } = useSession();
   const [clients, setClients] = useState<any[]>([]);
   const [newClientName, setNewClientName] = useState("");
+  const [editingClient, setEditingClient] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
@@ -582,12 +703,14 @@ function ClientsTab() {
   }, [session?.companyId]);
 
   const loadClients = async () => {
+    if (!session?.companyId) return;
+
     setLoading(true);
     try {
       const { data, error } = await supabase
         .from("clients")
-        .select("id, client_name, created_at")
-        .eq("company_id", session?.companyId)
+        .select("id, client_name, created_at, created_by")
+        .eq("company_id", session.companyId)
         .order("client_name");
 
       if (error) throw error;
@@ -598,85 +721,192 @@ function ClientsTab() {
     setLoading(false);
   };
 
-  const addClient = async () => {
-  if (!newClientName.trim()) {
-    setMessage({ text: "Client name is required", type: "error" });
-    return;
-  }
+  const saveClient = async () => {
+    if (!newClientName.trim()) {
+      setMessage({ text: "Client name is required", type: "error" });
+      return;
+    }
 
-  if (!session?.companyId || !session?.userId) {
-    setMessage({ text: "Session incomplete – please log in again", type: "error" });
-    return;
-  }
+    if (!session?.companyId || !session?.userId) {
+      setMessage({ text: "Session incomplete", type: "error" });
+      return;
+    }
 
-  setLoading(true);
-  setMessage(null);
+    setLoading(true);
+    setMessage(null);
 
-  try {
-    // 1. Insert client
-    const { data: newClient, error: insertError } = await supabase
-      .from("clients")
-      .insert({
+    try {
+      let clientId;
+
+      const clientData = {
         client_name: newClientName.trim(),
         company_id: session.companyId,
-      })
-      .select("id")
-      .single();
+      };
 
-    if (insertError) throw insertError;
+      if (editingClient) {
+        // UPDATE
+        const { error: updateError } = await supabase
+          .from("clients")
+          .update(clientData)
+          .eq("id", editingClient.id);
 
-    // 2. Manually log with real user_id
-    const { error: logError } = await supabase
-      .from("activity_log")
-      .insert({
-        company_id: session.companyId,
-        user_id: session.userId,              // ← now filled
-        event_type: "CREATE",
-        ref_type: "CLIENT",
-        ref_id: newClient.id,
-        created_at: new Date().toISOString(),
-        meta: { client_name: newClientName.trim() },
-      });
+        if (updateError) throw updateError;
 
-    if (logError) console.warn("Activity log failed, but client added:", logError);
+        clientId = editingClient.id;
 
+        // Log UPDATE
+        await supabase.from("activity_log").insert({
+          company_id: session.companyId,
+          user_id: session.userId,
+          event_type: "UPDATE",
+          ref_type: "CLIENT",
+          ref_id: clientId,
+          created_at: new Date().toISOString(),
+          meta: clientData,
+        });
+      } else {
+        // INSERT
+        const { data: newClient, error: insertError } = await supabase
+          .from("clients")
+          .insert(clientData)
+          .select("id")
+          .single();
+
+        if (insertError) throw insertError;
+
+        clientId = newClient.id;
+
+        // Log CREATE
+        await supabase.from("activity_log").insert({
+          company_id: session.companyId,
+          user_id: session.userId,
+          event_type: "CREATE",
+          ref_type: "CLIENT",
+          ref_id: clientId,
+          created_at: new Date().toISOString(),
+          meta: clientData,
+        });
+      }
+
+      setNewClientName("");
+      setEditingClient(null);
+      loadClients();
+      setMessage({ text: editingClient ? "Client updated" : "Client added", type: "success" });
+      setTimeout(() => setMessage(null), 4000);
+    } catch (err: any) {
+      console.error("Client save error:", err);
+      setMessage({ text: err.message || "Failed to save client", type: "error" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deleteClient = async (clientId: string, clientName: string) => {
+    if (!confirm(`Delete "${clientName}"? This cannot be undone.`)) return;
+
+    setLoading(true);
+    setMessage(null);
+
+    try {
+      const { error: deleteError } = await supabase
+        .from("clients")
+        .delete()
+        .eq("id", clientId);
+
+      if (deleteError) {
+        if (deleteError.code === "23503") {
+          setMessage({
+            text: `Cannot delete "${clientName}" — it is used in usage records.`,
+            type: "error",
+          });
+        } else {
+          throw deleteError;
+        }
+      } else {
+        // Log DELETE
+        await supabase.from("activity_log").insert({
+          company_id: session.companyId,
+          user_id: session.userId,
+          event_type: "DELETE",
+          ref_type: "CLIENT",
+          ref_id: clientId,
+          created_at: new Date().toISOString(),
+          meta: { client_name: clientName },
+        });
+
+        loadClients();
+        setMessage({ text: "Client deleted", type: "success" });
+        setTimeout(() => setMessage(null), 4000);
+      }
+    } catch (err: any) {
+      console.error("Delete client error:", err);
+      setMessage({ text: err.message || "Failed to delete client", type: "error" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const startEdit = (client: any) => {
+    setEditingClient(client);
+    setNewClientName(client.client_name || "");
+  };
+
+  const cancelEdit = () => {
+    setEditingClient(null);
     setNewClientName("");
-    loadClients();
-    setMessage({ text: "Client added successfully", type: "success" });
-    setTimeout(() => setMessage(null), 4000);
-  } catch (err: any) {
-    console.error("Add client error:", err);
-    setMessage({ text: err.message || "Failed to add client", type: "error" });
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   return (
     <div className="space-y-6">
       <h2 className="text-xl font-semibold text-gray-900">Manage Clients</h2>
 
       {message && (
-        <div className={`p-4 rounded-lg border-l-4 ${message.type === "success" ? "bg-green-50 border-green-500 text-green-700" : "bg-red-50 border-red-500 text-red-700"}`}>
+        <div
+          className={`p-4 rounded-lg border-l-4 ${
+            message.type === "success" ? "bg-green-50 border-green-500 text-green-700" : "bg-red-50 border-red-500 text-red-700"
+          }`}
+        >
           {message.text}
         </div>
       )}
 
-      <div className="flex flex-col sm:flex-row gap-3">
-        <input
-          type="text"
-          value={newClientName}
-          onChange={e => setNewClientName(e.target.value)}
-          placeholder="Enter new client name"
-          className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
-        />
-        <button
-          onClick={addClient}
-          disabled={loading || !newClientName.trim()}
-          className="bg-blue-600 text-white px-5 py-2 rounded-lg disabled:bg-gray-400"
-        >
-          Add Client
-        </button>
+      <div className="bg-gray-50 p-5 rounded-lg border border-gray-200">
+        <h3 className="text-lg font-medium mb-4">
+          {editingClient ? "Edit Client" : "Add New Client"}
+        </h3>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Client Name *</label>
+            <input
+              type="text"
+              value={newClientName}
+              onChange={(e) => setNewClientName(e.target.value)}
+              placeholder="Enter client name"
+              className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
+              disabled={loading}
+            />
+          </div>
+        </div>
+
+        <div className="mt-6 flex gap-3">
+          <button
+            onClick={saveClient}
+            disabled={loading || !newClientName.trim()}
+            className="bg-blue-600 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-blue-700 transition disabled:bg-gray-400 disabled:cursor-not-allowed"
+          >
+            {loading ? "Saving..." : editingClient ? "Update Client" : "Add Client"}
+          </button>
+
+          {editingClient && (
+            <button
+              onClick={cancelEdit}
+              className="bg-gray-500 text-white px-6 py-2.5 rounded-lg hover:bg-gray-600 transition"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
       </div>
 
       {loading ? (
@@ -690,14 +920,29 @@ function ClientsTab() {
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Client Name</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created At</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {clients.map(c => (
                 <tr key={c.id}>
-                  <td className="px-6 py-4 whitespace-nowrap">{c.client_name}</td>
+                  <td className="px-6 py-4 whitespace-nowrap font-medium">{c.client_name}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {new Date(c.created_at).toLocaleDateString()}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap space-x-3">
+                    <button
+                      onClick={() => startEdit(c)}
+                      className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => deleteClient(c.id, c.client_name)}
+                      className="text-red-600 hover:text-red-800 text-sm font-medium"
+                    >
+                      Delete
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -849,24 +1094,29 @@ function SuppliersTab() {
     }
   };
 
-  const deleteSupplier = async (supplierId: string, supplierName: string) => {
-    if (!confirm(`Are you sure you want to delete "${supplierName}"? This cannot be undone.`)) {
-      return;
-    }
+ const deleteSupplier = async (supplierId: string, supplierName: string) => {
+  if (!confirm(`Are you sure you want to delete "${supplierName}"?`)) return;
 
-    setLoading(true);
-    setMessage(null);
+  setLoading(true);
+  setMessage(null);
 
-    try {
-      // 1. Delete supplier
-      const { error: deleteError } = await supabase
-        .from("suppliers")
-        .delete()
-        .eq("id", supplierId);
+  try {
+    const { error } = await supabase
+      .from("suppliers")
+      .delete()
+      .eq("id", supplierId);
 
-      if (deleteError) throw deleteError;
-
-      // 2. Log DELETE
+    if (error) {
+      if (error.code === "23503") {
+        setMessage({
+          text: `Cannot delete "${supplierName}" — it is still used in some usage records.`,
+          type: "error",
+        });
+      } else {
+        throw error;
+      }
+    } else {
+      // Log DELETE only if successful
       await supabase.from("activity_log").insert({
         company_id: session.companyId,
         user_id: session.userId,
@@ -880,13 +1130,14 @@ function SuppliersTab() {
       loadSuppliers();
       setMessage({ text: "Supplier deleted successfully", type: "success" });
       setTimeout(() => setMessage(null), 4000);
-    } catch (err: any) {
-      console.error("Delete supplier error:", err);
-      setMessage({ text: err.message || "Failed to delete supplier", type: "error" });
-    } finally {
-      setLoading(false);
     }
-  };
+  } catch (err: any) {
+    console.error("Delete supplier error:", err);
+    setMessage({ text: err.message || "Failed to delete supplier", type: "error" });
+  } finally {
+    setLoading(false);
+  }
+};
 
   const startEdit = (supplier: any) => {
     setEditingSupplier(supplier);
