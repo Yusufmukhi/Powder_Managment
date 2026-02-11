@@ -708,10 +708,393 @@ function ClientsTab() {
     </div>
   );
 }
+
+
 function SuppliersTab() {
-  return <div className="py-10 text-center text-gray-600">Suppliers management coming soon...</div>;
+  const { session } = useSession();
+  const [suppliers, setSuppliers] = useState<any[]>([]);
+  const [newSupplierName, setNewSupplierName] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
+
+  useEffect(() => {
+    loadSuppliers();
+  }, [session?.companyId]);
+
+  const loadSuppliers = async () => {
+    if (!session?.companyId) return;
+
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("suppliers")
+        .select("id, supplier_name, address, city, state, pincode, phone, email, gstin, created_at")
+        .eq("company_id", session.companyId)
+        .order("supplier_name");
+
+      if (error) throw error;
+      setSuppliers(data || []);
+    } catch (err: any) {
+      setMessage({ text: "Failed to load suppliers", type: "error" });
+    }
+    setLoading(false);
+  };
+
+  const addSupplier = async () => {
+    if (!newSupplierName.trim()) {
+      setMessage({ text: "Supplier name is required", type: "error" });
+      return;
+    }
+
+    if (!session?.companyId || !session?.userId) {
+      setMessage({ text: "Session incomplete – please log in again", type: "error" });
+      return;
+    }
+
+    setLoading(true);
+    setMessage(null);
+
+    try {
+      // 1. Insert supplier
+      const { data: newSupplier, error: insertError } = await supabase
+        .from("suppliers")
+        .insert({
+          supplier_name: newSupplierName.trim(),
+          company_id: session.companyId,
+          // Optional: add other fields if your form has them later
+        })
+        .select("id")
+        .single();
+
+      if (insertError) throw insertError;
+
+      // 2. Manually log to activity_log with real user_id
+      const { error: logError } = await supabase
+        .from("activity_log")
+        .insert({
+          company_id: session.companyId,
+          user_id: session.userId,                    // ← real user ID
+          event_type: "CREATE",
+          ref_type: "SUPPLIER",
+          ref_id: newSupplier.id,
+          created_at: new Date().toISOString(),
+          meta: { supplier_name: newSupplierName.trim() },
+        });
+
+      if (logError) {
+        console.warn("Activity log failed, but supplier added:", logError);
+      }
+
+      setNewSupplierName("");
+      loadSuppliers();
+      setMessage({ text: "Supplier added successfully", type: "success" });
+      setTimeout(() => setMessage(null), 4000);
+    } catch (err: any) {
+      console.error("Add supplier error:", err);
+      setMessage({
+        text: err.message || "Failed to add supplier",
+        type: "error",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-xl font-semibold text-gray-900">Manage Suppliers</h2>
+
+      {message && (
+        <div
+          className={`p-4 rounded-lg border-l-4 ${
+            message.type === "success" ? "bg-green-50 border-green-500 text-green-700" : "bg-red-50 border-red-500 text-red-700"
+          }`}
+        >
+          {message.text}
+        </div>
+      )}
+
+      <div className="flex flex-col sm:flex-row gap-3">
+        <input
+          type="text"
+          value={newSupplierName}
+          onChange={(e) => setNewSupplierName(e.target.value)}
+          placeholder="Enter new supplier name"
+          className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
+          disabled={loading}
+        />
+        <button
+          onClick={addSupplier}
+          disabled={loading || !newSupplierName.trim()}
+          className="bg-blue-600 text-white px-5 py-2 rounded-lg disabled:bg-gray-400 disabled:cursor-not-allowed"
+        >
+          {loading ? "Adding..." : "Add Supplier"}
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="text-center py-10 text-gray-500">Loading suppliers...</div>
+      ) : suppliers.length === 0 ? (
+        <div className="text-center py-10 text-gray-500">No suppliers added yet</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Supplier Name</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created At</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {suppliers.map(s => (
+                <tr key={s.id}>
+                  <td className="px-6 py-4 whitespace-nowrap font-medium">{s.supplier_name}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {new Date(s.created_at).toLocaleDateString()}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function UsersTab() {
-  return <div className="py-10 text-center text-gray-600">Users management (role change) coming soon...</div>;
+  const { session } = useSession();
+  const [users, setUsers] = useState<any[]>([]);
+  const [newUsername, setNewUsername] = useState("");
+  const [newFullName, setNewFullName] = useState("");
+  const [newRole, setNewRole] = useState<"owner" | "staff">("staff");
+  const [newPassword, setNewPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
+
+  useEffect(() => {
+    loadUsers();
+  }, [session?.companyId]);
+
+  const loadUsers = async () => {
+    if (!session?.companyId) return;
+
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("users")
+        .select("id, username, full_name, role, created_at, must_change_password")
+        .eq("company_id", session.companyId)
+        .order("username");
+
+      if (error) throw error;
+      setUsers(data || []);
+    } catch (err: any) {
+      setMessage({ text: "Failed to load users", type: "error" });
+    }
+    setLoading(false);
+  };
+
+  const addUser = async () => {
+    if (!newUsername.trim()) {
+      setMessage({ text: "Username is required", type: "error" });
+      return;
+    }
+    if (!newFullName.trim()) {
+      setMessage({ text: "Full name is required", type: "error" });
+      return;
+    }
+    if (!newPassword) {
+      setMessage({ text: "Password is required", type: "error" });
+      return;
+    }
+
+    if (!session?.companyId || !session?.userId) {
+      setMessage({ text: "Session incomplete – please log in again", type: "error" });
+      return;
+    }
+
+    setLoading(true);
+    setMessage(null);
+
+    try {
+      // 1. Insert new user
+      const { data: newUser, error: insertError } = await supabase
+        .from("users")
+        .insert({
+          username: newUsername.trim(),
+          full_name: newFullName.trim(),
+          role: newRole,
+          company_id: session.companyId,
+          password: newPassword, // Note: in real app, hash this on backend!
+          must_change_password: true,
+        })
+        .select("id")
+        .single();
+
+      if (insertError) throw insertError;
+
+      // 2. Manually log to activity_log with real user_id
+      const { error: logError } = await supabase
+        .from("activity_log")
+        .insert({
+          company_id: session.companyId,
+          user_id: session.userId,                    // ← real logged-in user
+          event_type: "CREATE",
+          ref_type: "USER",
+          ref_id: newUser.id,
+          created_at: new Date().toISOString(),
+          meta: {
+            username: newUsername.trim(),
+            full_name: newFullName.trim(),
+            role: newRole,
+          },
+        });
+
+      if (logError) {
+        console.warn("Activity log failed, but user added:", logError);
+      }
+
+      // Clear form
+      setNewUsername("");
+      setNewFullName("");
+      setNewPassword("");
+      setNewRole("staff");
+
+      loadUsers();
+      setMessage({ text: "User added successfully", type: "success" });
+      setTimeout(() => setMessage(null), 4000);
+    } catch (err: any) {
+      console.error("Add user error:", err);
+      setMessage({
+        text: err.message?.includes("unique") 
+          ? "Username already exists" 
+          : err.message || "Failed to add user",
+        type: "error",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-xl font-semibold text-gray-900">Manage Users</h2>
+
+      {message && (
+        <div
+          className={`p-4 rounded-lg border-l-4 ${
+            message.type === "success" ? "bg-green-50 border-green-500 text-green-700" : "bg-red-50 border-red-500 text-red-700"
+          }`}
+        >
+          {message.text}
+        </div>
+      )}
+
+      <div className="bg-gray-50 p-5 rounded-lg border border-gray-200">
+        <h3 className="text-lg font-medium mb-4">Add New User</h3>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Username *</label>
+            <input
+              type="text"
+              value={newUsername}
+              onChange={(e) => setNewUsername(e.target.value)}
+              placeholder="Enter username"
+              className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
+              disabled={loading}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
+            <input
+              type="text"
+              value={newFullName}
+              onChange={(e) => setNewFullName(e.target.value)}
+              placeholder="Enter full name"
+              className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
+              disabled={loading}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Password *</label>
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="Set initial password"
+              className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
+              disabled={loading}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+            <select
+              value={newRole}
+              onChange={(e) => setNewRole(e.target.value as "owner" | "staff")}
+              className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 bg-white"
+              disabled={loading}
+            >
+              <option value="staff">Staff</option>
+              <option value="owner">Owner</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <button
+            onClick={addUser}
+            disabled={loading || !newUsername.trim() || !newFullName.trim() || !newPassword}
+            className="bg-blue-600 text-white px-6 py-2 rounded-lg disabled:bg-gray-400 disabled:cursor-not-allowed"
+          >
+            {loading ? "Adding..." : "Add User"}
+          </button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="text-center py-10 text-gray-500">Loading users...</div>
+      ) : users.length === 0 ? (
+        <div className="text-center py-10 text-gray-500">No users added yet</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Username</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Full Name</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created At</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {users.map(u => (
+                <tr key={u.id}>
+                  <td className="px-6 py-4 whitespace-nowrap font-medium">{u.username}</td>
+                  <td className="px-6 py-4 whitespace-nowrap">{u.full_name || "—"}</td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                      u.role === "owner" ? "bg-purple-100 text-purple-800" : "bg-blue-100 text-blue-800"
+                    }`}>
+                      {u.role}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {new Date(u.created_at).toLocaleDateString()}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
 }
+
+
+
