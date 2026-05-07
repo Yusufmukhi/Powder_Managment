@@ -58,25 +58,31 @@ export default function Usage() {
   const [loading, setLoading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  useEffect(() => {
-    supabase
-      .from("powders")
-      .select("id, powder_name")
-      .eq("company_id", companyId)
-      .order("powder_name")
-      .then(({ data }) => {
-        if (data) {
-          setPowders(
-            data.map((p) => ({
-              id: p.id,
-              label: p.powder_name.trim(),
-            }))
-          );
-        }
-      });
 
-    refreshUsage();
-  }, [companyId]);
+useEffect(() => {
+  supabase
+    .from("stock_batches")
+    .select("powder_id, powders ( powder_name )")
+    .eq("company_id", companyId)
+    .gt("qty_remaining", 0)
+    .then(({ data }) => {
+      if (data) {
+        const map = new Map<string, string>();
+        data.forEach((r: any) => {
+          const name = r.powders?.powder_name?.trim();
+          if (name && r.powder_id) map.set(r.powder_id, name);
+        });
+
+        const options = Array.from(map.entries())
+          .map(([id, label]) => ({ id, label }))
+          .sort((a, b) => a.label.localeCompare(b.label));
+
+        setPowders(options);
+      }
+    });
+
+  refreshUsage();
+}, [companyId]);
 
   useEffect(() => {
     if (!powder?.id) {
