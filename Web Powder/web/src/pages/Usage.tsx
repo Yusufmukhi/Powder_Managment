@@ -101,33 +101,33 @@ export default function Usage() {
       return;
     }
 
-    supabase
-      .from("stock_batches")
-      .select("supplier_id, suppliers ( supplier_name )")
-      .eq("company_id", companyId)
-      .eq("powder_id", powder.id)
-      .gt("qty_remaining", 0)
-      .then(({ data }) => {
-        if (!data || data.length === 0) {
-          setSuppliers([]);
-          setSupplier(null);
-          return;
-        }
+supabase
+  .from("stock_batches")
+  .select("supplier_id, suppliers ( supplier_name )")
+  .eq("company_id", companyId)
+  .eq("powder_id", powder.id)
+  .gt("qty_remaining", 0)
+  .then(({ data }) => {
+    if (!data || data.length === 0) {
+      setSuppliers([]);
+      setSupplier(null);
+      return;
+    }
 
-        const map = new Map<string, string>();
-        data.forEach((r: any) => {
-          const name = r.suppliers?.[0]?.supplier_name?.trim();
-          if (name && r.supplier_id) map.set(r.supplier_id, name);
-        });
+    const map = new Map<string, string>();
+    data.forEach((r: any) => {
+      const name = r.suppliers?.supplier_name?.trim(); // ✅ Fixed
+      if (name && r.supplier_id) map.set(r.supplier_id, name);
+    });
 
-        const options = Array.from(map.entries()).map(([id, label]) => ({
-          id,
-          label,
-        }));
+    const options = Array.from(map.entries()).map(([id, label]) => ({
+      id,
+      label,
+    }));
 
-        setSuppliers(options);
-        setSupplier(null);
-      });
+    setSuppliers(options);
+    setSupplier(null);
+  });
   }, [powder?.id, companyId, editingId, usageRows]);
 
   useEffect(() => {
