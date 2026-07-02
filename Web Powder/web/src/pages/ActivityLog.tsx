@@ -11,9 +11,6 @@ type LogRow = {
   ref_id: string
   old_values: string
   new_values: string
-  changed_fields: string
-  ip_address: string
-  user_agent: string
   meta: string
 }
 
@@ -112,7 +109,7 @@ export default function ActivityLog() {
     const { data: logs, error } = await supabase
       .from("activity_log")
       .select(
-        "id, created_at, user_id, event_type, ref_type, ref_id, old_values, new_values, changed_fields, ip_address, user_agent, meta"
+        "id, created_at, user_id, event_type, ref_type, ref_id, old_values, new_values, meta"
       )
       .eq("company_id", session.companyId)
       .gte("created_at", `${fromDate}T00:00:00`)
@@ -160,9 +157,6 @@ export default function ActivityLog() {
         ref_id: r.ref_id || "—",
         old_values: formatObject(r.old_values),
         new_values: formatObject(r.new_values),
-        changed_fields: r.changed_fields ? r.changed_fields.join(", ") : "—",
-        ip_address: r.ip_address || "—",
-        user_agent: r.user_agent || "—",
         meta: formatObject(r.meta)
       }))
     )
@@ -215,9 +209,6 @@ export default function ActivityLog() {
               { key: "ref_id", label: "Ref ID" },
               { key: "old_values", label: "Old Values" },
               { key: "new_values", label: "New Values" },
-              { key: "changed_fields", label: "Changed Fields" },
-              { key: "ip_address", label: "IP Address" },
-              { key: "user_agent", label: "User Agent" },
               { key: "meta", label: "Meta" }
             ]}
             data={rows}
