@@ -17,6 +17,66 @@ type LogRow = {
   meta: string
 }
 
+/* ---------------- JSON -> READABLE TEXT ---------------- */
+
+// Columns we never want to show even in readable form (noise, already shown elsewhere)
+const SKIP_KEYS = new Set([
+  "id",
+  "company_id",
+  "created_at",
+  "created_by",
+  "updated_by",
+  "user_id",
+  "timestamp"
+])
+
+// Nicer labels for common field names
+const LABELS: Record<string, string> = {
+  full_name: "Name",
+  qty_remaining: "Qty Remaining",
+  qty_received: "Qty Received",
+  qty_used: "Qty Used",
+  rate_per_kg: "Rate/kg",
+  total_amount: "Total Amount",
+  po_number: "PO Number",
+  supplier_name: "Supplier",
+  supplier: "Supplier",
+  client_name: "Client",
+  client: "Client",
+  powder_name: "Powder",
+  powder: "Powder",
+  status: "Status",
+  reason: "Reason",
+  note: "Note",
+  table: "Table",
+  action: "Action"
+}
+
+function humanizeKey(key: string): string {
+  if (LABELS[key]) return LABELS[key]
+  return key
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, c => c.toUpperCase())
+}
+
+function formatValue(v: unknown): string {
+  if (v === null || v === undefined || v === "") return "—"
+  if (typeof v === "number") return v.toLocaleString("en-IN")
+  return String(v)
+}
+
+// Turns { qty_remaining: 150, reason: "..." } into "Qty Remaining: 150 · Reason: ..."
+function formatObject(obj: unknown): string {
+  if (!obj || typeof obj !== "object") return "—"
+  const entries = Object.entries(obj as Record<string, unknown>).filter(
+    ([k]) => !SKIP_KEYS.has(k)
+  )
+  if (entries.length === 0) return "—"
+  return entries
+    .map(([k, v]) => `${humanizeKey(k)}: ${formatValue(v)}`)
+    .join(" · ")
+}
+
 export default function ActivityLog() {
   const { session } = useSession()
 
@@ -98,12 +158,12 @@ export default function ActivityLog() {
         event: r.event_type,
         module: r.ref_type,
         ref_id: r.ref_id || "—",
-        old_values: r.old_values ? JSON.stringify(r.old_values) : "—",
-        new_values: r.new_values ? JSON.stringify(r.new_values) : "—",
+        old_values: formatObject(r.old_values),
+        new_values: formatObject(r.new_values),
         changed_fields: r.changed_fields ? r.changed_fields.join(", ") : "—",
         ip_address: r.ip_address || "—",
         user_agent: r.user_agent || "—",
-        meta: r.meta ? JSON.stringify(r.meta) : "—"
+        meta: formatObject(r.meta)
       }))
     )
     setLoading(false)
