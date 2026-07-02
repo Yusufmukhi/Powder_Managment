@@ -7,6 +7,7 @@ import Usage from "../pages/Usage"
 import Analysis from "../pages/Analysis"
 import PurchaseOrder from "../pages/PurchaseOrder"
 import Settings from "../pages/Settings"
+import ActivityLog from "../pages/ActivityLog"
 
 import ProtectedRoute from "./ProtectedRoute"
 import Layout from "./Layout"
@@ -74,7 +75,7 @@ export default function Router() {
           }
         />
 
-        {/* <Route
+        <Route
           path="/activity"
           element={
             <ProtectedRoute role="owner">
@@ -84,7 +85,7 @@ export default function Router() {
             </ProtectedRoute>
           }
         />
-*/
+
         <Route
           path="/settings"
           element={
@@ -94,7 +95,7 @@ export default function Router() {
               </Layout>
             </ProtectedRoute>
           }
-        />  }
+        />
 
         {/* 🧹 FALLBACK */}
         <Route path="*" element={<Navigate to="/" />} />
