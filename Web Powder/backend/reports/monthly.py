@@ -293,10 +293,12 @@ def generate_monthly_pdf(company_id: str, year: int, month: int) -> str:
     mom_qty, mom_cost, mom_cpk = pct(curr_qty, prev_qty), pct(curr_cost, prev_cost), pct(curr_cpk, prev_cpk)
 
     supplier_cost = defaultdict(float)
+    supplier_qty = defaultdict(float)
     powder_qty = defaultdict(float)
     powder_cost = defaultdict(float)
     for d in curr_data:
         supplier_cost[d["supplier"]] += d["cost"]
+        supplier_qty[d["supplier"]] += d["qty"]
         powder_qty[d["powder"]] += d["qty"]
         powder_cost[d["powder"]] += d["cost"]
 
@@ -384,10 +386,12 @@ def generate_monthly_pdf(company_id: str, year: int, month: int) -> str:
     # ==== 4. Supplier-wise cost breakdown ====
     sup_rows = []
     for sup, cost in sorted(supplier_cost.items(), key=lambda x: -x[1]):
+        qty_s = supplier_qty[sup]
+        rate_s = cost / qty_s if qty_s else 0
         share = cost / curr_cost * 100 if curr_cost else 0
-        sup_rows.append([sup, f"₹{cost:,.0f}", f"{share:.1f}%"])
+        sup_rows.append([sup, f"{qty_s:,.1f}", f"₹{rate_s:,.2f}", f"₹{cost:,.0f}", f"{share:.1f}%"])
     sup_table = _breakdown_table(
-        ["Supplier", "Cost (₹)", "% of Spend"], sup_rows, [280, 130, 110]
+        ["Supplier", "Qty (kg)", "Avg Rate/kg", "Cost (₹)", "% of Spend"], sup_rows, [175, 70, 85, 90, 80]
     )
     story.append(KeepTogether([Paragraph("4. Supplier-wise Cost Breakdown", styles["SectionHeader"]), sup_table]))
     story.append(gap(SECTION_GAP))
@@ -429,15 +433,72 @@ def generate_monthly_pdf(company_id: str, year: int, month: int) -> str:
 
     # ==== 6. Key insights ====
     story.append(Paragraph("6. Key Insights &amp; Recommended Actions", styles["SectionHeader"]))
-    story.append(Paragraph(f"• Average cost per kg is ₹{curr_cpk:.2f} ({fmt_pct(mom_cpk)} MoM).", styles["Insight"]))
-    risk_note = "This represents a supplier concentration risk — diversification is advised." \
-        if top_supplier_pct > 60 else "Supplier exposure is within an acceptable range."
-    story.append(Paragraph(
-        f"• Supplier concentration: <b>{top_supplier}</b> accounts for {top_supplier_pct:.1f}% of spend. {risk_note}",
-        styles["Insight"]))
-    story.append(Paragraph(
-        f"• <b>{top_powder}</b> was the highest-volume material consumed this period.",
-        styles["Insight"]))
+
+    insight_bullets = []
+
+    # 1. Cost driver: is the MoM cost move coming from volume or from rate?
+    if mom_cost is not None and mom_qty is not None and mom_cpk is not None and abs(mom_cost) >= 1:
+        if abs(mom_cpk) >= abs(mom_qty):
+            driver = "primarily by <b>rate movement</b> (avg. cost/kg), not by how much material was used"
+        else:
+            driver = "primarily by <b>consumption volume</b>, not by rate changes"
+        insight_bullets.append(
+            f"Total cost {'rose' if mom_cost >= 0 else 'fell'} {fmt_pct(mom_cost)} this month, driven {driver}. "
+            f"({fmt_pct(mom_qty)} qty · {fmt_pct(mom_cpk)} rate)"
+        )
+
+    # 2. Material rate dispersion — flags materials priced above the portfolio average
+    if powder_qty:
+        rates = {p: (powder_cost[p] / powder_qty[p] if powder_qty[p] else 0) for p in powder_qty}
+        max_p = max(rates, key=rates.get)
+        min_p = min(rates, key=rates.get)
+        spread = ((rates[max_p] - rates[min_p]) / rates[min_p] * 100) if rates[min_p] else 0
+        if spread > 5:
+            insight_bullets.append(
+                f"Material rates ranged from ₹{rates[min_p]:,.2f}/kg (<b>{min_p}</b>) to "
+                f"₹{rates[max_p]:,.2f}/kg (<b>{max_p}</b>) — a {spread:.0f}% spread. Worth checking "
+                f"whether <b>{max_p}</b> can be resourced at a better rate."
+            )
+
+    # 3. Material concentration — how reliant is this month on 1-2 materials?
+    if powder_qty and curr_qty:
+        top2 = sorted(powder_qty.items(), key=lambda x: -x[1])[:2]
+        top2_share = sum(v for _, v in top2) / curr_qty * 100
+        if top2_share > 55:
+            names = " and ".join(f"<b>{n}</b>" for n, _ in top2)
+            insight_bullets.append(
+                f"{names} together account for {top2_share:.1f}% of this month's volume — "
+                f"consumption is concentrated in a small set of materials."
+            )
+
+    # 4. Supplier concentration (kept, but only shown if actually notable)
+    if top_supplier_pct > 60:
+        insight_bullets.append(
+            f"Supplier concentration: <b>{top_supplier}</b> accounts for {top_supplier_pct:.1f}% of spend "
+            f"this month — diversification is advised to reduce single-source risk."
+        )
+
+    # 5. Six-month trend direction (reuses the chart data computed above)
+    if len(cpk_trend) >= 2 and cpk_trend[0] and cpk_trend[-1]:
+        trend_pct = (cpk_trend[-1] - cpk_trend[0]) / cpk_trend[0] * 100
+        if abs(trend_pct) > 3:
+            direction = "risen" if trend_pct >= 0 else "fallen"
+            insight_bullets.append(
+                f"Average cost per kg has {direction} {abs(trend_pct):.1f}% over the trailing six months "
+                f"(₹{cpk_trend[0]:.2f} → ₹{cpk_trend[-1]:.2f})"
+                + (" — if this continues, consider locking in rates with key suppliers."
+                   if trend_pct > 3 else ".")
+            )
+
+    # Fallback so the section is never empty even if nothing crossed a threshold
+    if not insight_bullets:
+        insight_bullets.append(
+            f"Consumption and cost were stable this month at ₹{curr_cpk:.2f}/kg "
+            f"({fmt_pct(mom_cpk)} MoM) with no notable concentration or rate anomalies."
+        )
+
+    for b in insight_bullets:
+        story.append(Paragraph(f"• {b}", styles["Insight"]))
     story.append(gap(SECTION_GAP + 6))
 
     # ==== 7. Approval & sign-off ====
