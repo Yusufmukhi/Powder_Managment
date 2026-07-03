@@ -1,30 +1,43 @@
 import { Role } from "../context/session.context";
-import { supabase } from "../lib/supabase"
 
-export async function loginUser(username: string, password: string) {
-  const { data: user, error } = await supabase
-    .from("users")
-    .select("id, company_id, username, role, full_name, password")
-    .eq("username", username)
-    .single();
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL!;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY!;
 
-  if (error || !user) {
-    throw new Error("User not found");
-  }
+export type LoginResult = {
+  userId: string;
+  companyId: string;
+  username: string;
+  role: Role;
+  fullName: string;
+  sessionToken: string;
+};
 
-  // Compare password (you must use bcrypt compare)
-  const bcrypt = await import('bcryptjs');
-  const isMatch = await bcrypt.compare(password, user.password);
+export async function loginUser(
+  username: string,
+  password: string
+): Promise<LoginResult> {
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/login`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    },
+    body: JSON.stringify({ username, password }),
+  });
 
-  if (!isMatch) {
-    throw new Error("Invalid password");
+  const data = await res.json();
+
+  if (!res.ok) {
+    throw new Error(data.error || "Login failed");
   }
 
   return {
-    userId: user.id,
-    companyId: user.company_id,
-    username: user.username,
-    role: user.role as Role,
-    fullName: user.full_name || "",
+    userId: data.userId,
+    companyId: data.companyId,
+    username: data.username,
+    role: data.role as Role,
+    fullName: data.fullName || "",
+    sessionToken: data.sessionToken,
   };
 }
