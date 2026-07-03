@@ -239,10 +239,12 @@ def generate_annual_pdf(company_id: str, fy_start_year: int) -> str:
     yoy_qty, yoy_cost, yoy_cpk = pct(curr_qty, prev_qty), pct(curr_cost, prev_cost), pct(curr_cpk, prev_cpk)
 
     supplier_cost = defaultdict(float)
+    supplier_qty = defaultdict(float)
     powder_qty = defaultdict(float)
     powder_cost = defaultdict(float)
     for d in curr_data:
         supplier_cost[d["supplier"]] += d["cost"]
+        supplier_qty[d["supplier"]] += d["qty"]
         powder_qty[d["powder"]] += d["qty"]
         powder_cost[d["powder"]] += d["cost"]
 
@@ -273,8 +275,8 @@ def generate_annual_pdf(company_id: str, fy_start_year: int) -> str:
     story.append(Paragraph("Contents", ParagraphStyle("toc_h", fontName="DejaVuSans-Bold", fontSize=10.5, textColor=MUTED, spaceAfter=6)))
     for i, label in enumerate([
         "Management Summary", "Consumption & Cost Summary", "Material-wise Consumption",
-        "Risk & Supplier Concentration Analysis", "Appendix A — Average Cost Trend",
-        "Notes & Methodology", "Approval & Sign-off"
+        "Risk & Supplier Concentration Analysis", "Key Insights & Recommended Actions",
+        "Appendix A — Average Cost Trend", "Notes & Methodology", "Approval & Sign-off"
     ], start=1):
         story.append(Paragraph(f"{i}. {label}", styles["TocEntry"]))
 
@@ -339,10 +341,13 @@ def generate_annual_pdf(company_id: str, fy_start_year: int) -> str:
     ))
 
     if supplier_cost:
-        rows = [["Supplier", "Cost (₹)", "% of Spend"]]
+        rows = [["Supplier", "Qty (kg)", "Avg Rate/kg", "Cost (₹)", "% of Spend"]]
         for sup, cost in sorted(supplier_cost.items(), key=lambda x: -x[1]):
-            rows.append([sup, f"{cost:,.0f}", f"{(cost / curr_cost * 100) if curr_cost else 0:.1f}%"])
-        sup_table = Table(rows, colWidths=[260, 110, 110])
+            qty_s = supplier_qty[sup]
+            rate_s = cost / qty_s if qty_s else 0
+            rows.append([sup, f"{qty_s:,.1f}", f"₹{rate_s:,.2f}", f"{cost:,.0f}",
+                         f"{(cost / curr_cost * 100) if curr_cost else 0:.1f}%"])
+        sup_table = Table(rows, colWidths=[150, 70, 85, 90, 80])
         sup_table.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), STEEL),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
@@ -359,9 +364,70 @@ def generate_annual_pdf(company_id: str, fy_start_year: int) -> str:
         story.append(gap(0.15))
         story.append(KeepTogether([sup_table]))
 
+    # ──── Key Insights & Recommended Actions ────
+    story.append(gap(0.3))
+    story.append(Paragraph("5. Key Insights &amp; Recommended Actions", styles["SectionHeader"]))
+
+    insight_bullets = []
+
+    # Cost driver: was the YoY cost move mainly rate or mainly volume?
+    if prev_qty and prev_cost and yoy_cpk is not None and yoy_qty is not None:
+        if abs(yoy_cpk) >= abs(yoy_qty):
+            driver = "changes in <b>average rate per kg</b> rather than consumption volume"
+        else:
+            driver = "changes in <b>consumption volume</b> rather than average rate"
+        insight_bullets.append(
+            f"Year-on-year cost movement ({fmt_pct(yoy_cost)}) was driven primarily by {driver}."
+        )
+
+    # Material rate dispersion
+    if powder_qty:
+        rates = {p: (powder_cost[p] / powder_qty[p] if powder_qty[p] else 0) for p in powder_qty}
+        max_p = max(rates, key=rates.get)
+        min_p = min(rates, key=rates.get)
+        spread = ((rates[max_p] - rates[min_p]) / rates[min_p] * 100) if rates[min_p] else 0
+        if spread > 5:
+            insight_bullets.append(
+                f"Average material rates ranged from ₹{rates[min_p]:,.2f}/kg (<b>{min_p}</b>) to "
+                f"₹{rates[max_p]:,.2f}/kg (<b>{max_p}</b>) — a {spread:.0f}% spread. Materials priced "
+                f"well above the portfolio average are worth a supplier rate review."
+            )
+
+    # Material concentration
+    if powder_qty and curr_qty:
+        top2 = sorted(powder_qty.items(), key=lambda x: -x[1])[:2]
+        top2_share = sum(v for _, v in top2) / curr_qty * 100
+        if top2_share > 55:
+            insight_bullets.append(
+                f"<b>{top2[0][0]}</b> and <b>{top2[1][0]}</b> together account for {top2_share:.1f}% "
+                f"of annual volume — production mix is concentrated; qualifying a backup supplier for "
+                f"these materials would reduce single-source risk."
+            )
+
+    # Supplier diversity
+    insight_bullets.append(
+        f"Material was sourced from {n_suppliers} supplier(s) this year. "
+        + ("Consider qualifying an additional supplier to reduce dependency on a single source."
+           if n_suppliers <= 1 else "Supplier base provides reasonable sourcing flexibility.")
+    )
+
+    # Partial-year caveat — explains why a still-open FY will look artificially low vs a full prior FY
+    if end > datetime.now():
+        months_elapsed = max(1, (min(datetime.now(), end).year - start.year) * 12
+                              + (min(datetime.now(), end).month - start.month) + 1)
+        insight_bullets.append(
+            f"<b>Note:</b> {fy_label} is still in progress — this report reflects only "
+            f"{months_elapsed} completed month(s) of the 12-month year. The consumption, cost, and "
+            f"YoY comparisons above will understate the full-year position until the financial year "
+            f"closes; treat this as a run-rate view rather than a final YoY comparison."
+        )
+
+    for b in insight_bullets:
+        story.append(Paragraph(f"• {b}", styles["ReportBody"]))
+
     # ──── Chart ────
     story.append(PageBreak())
-    story.append(Paragraph("5. Appendix A — Average Cost Trend (12 Months)", styles["SectionHeader"]))
+    story.append(Paragraph("6. Appendix A — Average Cost Trend (12 Months)", styles["SectionHeader"]))
 
     months, trend = [], []
     for i in range(12):
@@ -394,7 +460,7 @@ def generate_annual_pdf(company_id: str, fy_start_year: int) -> str:
 
     # ──── Notes & Methodology ────
     story.append(gap(0.45))
-    story.append(Paragraph("6. Notes &amp; Methodology", styles["SectionHeader"]))
+    story.append(Paragraph("7. Notes &amp; Methodology", styles["SectionHeader"]))
     for note in [
         "<b>Costing method:</b> Material cost is computed on a First-In-First-Out (FIFO) basis — "
         "each usage entry is costed against the oldest available stock batch at its received rate.",
@@ -409,7 +475,7 @@ def generate_annual_pdf(company_id: str, fy_start_year: int) -> str:
 
     # ──── Signature ────
     story.append(PageBreak())
-    story.append(Paragraph("7. Approval &amp; Sign-off", styles["SectionHeader"]))
+    story.append(Paragraph("8. Approval &amp; Sign-off", styles["SectionHeader"]))
     story.append(gap(0.35))
     story.append(Paragraph(
         "We confirm that the figures presented in this report have been reviewed and represent "
