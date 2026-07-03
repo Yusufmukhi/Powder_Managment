@@ -26,23 +26,10 @@ type UsageRow = {
 export default function Usage() {
   const { session, loading: sessionLoading } = useSession();
 
-  if (sessionLoading) {
-    return (
-      <div className="p-6 text-center text-gray-500">
-        Loading session...
-      </div>
-    );
-  }
-
-  if (!session || !session.companyId) {
-    return (
-      <div className="p-6 text-center text-red-600 font-medium">
-        No company selected or session invalid. Please log in again.
-      </div>
-    );
-  }
-
-  const companyId = session.companyId;
+  // companyId may briefly be null while the session is loading, or if the
+  // session is invalid - every hook below guards against that itself, so
+  // the hooks are always called in the same order on every render.
+  const companyId = session?.companyId ?? null;
 
   const [powders, setPowders] = useState<Option[]>([]);
   const [suppliers, setSuppliers] = useState<Option[]>([]);
@@ -58,103 +45,9 @@ export default function Usage() {
   const [loading, setLoading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-
-useEffect(() => {
-  supabase
-    .from("stock_batches")
-    .select("powder_id, powders ( powder_name )")
-    .eq("company_id", companyId)
-    .gt("qty_remaining", 0)
-    .then(({ data }) => {
-      if (data) {
-        const map = new Map<string, string>();
-        data.forEach((r: any) => {
-          const name = r.powders?.powder_name?.trim();
-          if (name && r.powder_id) map.set(r.powder_id, name);
-        });
-
-        const options = Array.from(map.entries())
-          .map(([id, label]) => ({ id, label }))
-          .sort((a, b) => a.label.localeCompare(b.label));
-
-        setPowders(options);
-      }
-    });
-
-  refreshUsage();
-}, [companyId]);
-
-  useEffect(() => {
-    if (!powder?.id) {
-      setSuppliers([]);
-      if (!editingId) setSupplier(null);
-      return;
-    }
-
-    if (editingId) {
-      const row = usageRows.find((r) => r.id === editingId);
-      if (row && row.supplier_id && row.supplier) {
-        const original = {
-          id: row.supplier_id,
-          label: row.supplier.trim(),
-        };
-        setSuppliers([original]);
-        setSupplier(original);
-      } else {
-        setSuppliers([]);
-        setSupplier(null);
-      }
-      return;
-    }
-
-supabase
-  .from("stock_batches")
-  .select("supplier_id, suppliers ( supplier_name )")
-  .eq("company_id", companyId)
-  .eq("powder_id", powder.id)
-  .gt("qty_remaining", 0)
-  .then(({ data }) => {
-    if (!data || data.length === 0) {
-      setSuppliers([]);
-      setSupplier(null);
-      return;
-    }
-
-    const map = new Map<string, string>();
-    data.forEach((r: any) => {
-      const name = r.suppliers?.supplier_name?.trim(); // ✅ Fixed
-      if (name && r.supplier_id) map.set(r.supplier_id, name);
-    });
-
-    const options = Array.from(map.entries()).map(([id, label]) => ({
-      id,
-      label,
-    }));
-
-    setSuppliers(options);
-    setSupplier(null);
-  });
-  }, [powder?.id, companyId, editingId, usageRows]);
-
-  useEffect(() => {
-    supabase
-      .from("clients")
-      .select("id, client_name")
-      .eq("company_id", companyId)
-      .order("client_name")
-      .then(({ data }) => {
-        if (data) {
-          setClients(
-            data.map((c) => ({
-              id: c.id,
-              label: c.client_name.trim(),
-            }))
-          );
-        }
-      });
-  }, [companyId]);
-
   const refreshUsage = async () => {
+    if (!companyId) return;
+
     const { data } = await supabase
       .from("usage")
       .select(`
@@ -171,10 +64,12 @@ supabase
 
     if (!data) return;
 
+    // These lookups are scoped to the same company as the usage rows above,
+    // so names never leak in from another company's powders/suppliers/clients.
     const [powdersRes, suppliersRes, clientsRes] = await Promise.all([
-      supabase.from("powders").select("id, powder_name"),
-      supabase.from("suppliers").select("id, supplier_name"),
-      supabase.from("clients").select("id, client_name"),
+      supabase.from("powders").select("id, powder_name").eq("company_id", companyId),
+      supabase.from("suppliers").select("id, supplier_name").eq("company_id", companyId),
+      supabase.from("clients").select("id, client_name").eq("company_id", companyId),
     ]);
 
     const powderMap = new Map(powdersRes.data?.map((p) => [p.id, p.powder_name]));
@@ -197,6 +92,107 @@ supabase
     );
   };
 
+  useEffect(() => {
+    if (!companyId) return;
+
+    supabase
+      .from("stock_batches")
+      .select("powder_id, powders ( powder_name )")
+      .eq("company_id", companyId)
+      .gt("qty_remaining", 0)
+      .then(({ data }) => {
+        if (data) {
+          const map = new Map<string, string>();
+          data.forEach((r: any) => {
+            const name = r.powders?.powder_name?.trim();
+            if (name && r.powder_id) map.set(r.powder_id, name);
+          });
+
+          const options = Array.from(map.entries())
+            .map(([id, label]) => ({ id, label }))
+            .sort((a, b) => a.label.localeCompare(b.label));
+
+          setPowders(options);
+        }
+      });
+
+    refreshUsage();
+  }, [companyId]);
+
+  useEffect(() => {
+    if (!companyId) return;
+
+    if (!powder?.id) {
+      setSuppliers([]);
+      if (!editingId) setSupplier(null);
+      return;
+    }
+
+    if (editingId) {
+      const row = usageRows.find((r) => r.id === editingId);
+      if (row && row.supplier_id && row.supplier) {
+        const original = {
+          id: row.supplier_id,
+          label: row.supplier.trim(),
+        };
+        setSuppliers([original]);
+        setSupplier(original);
+      } else {
+        setSuppliers([]);
+        setSupplier(null);
+      }
+      return;
+    }
+
+    supabase
+      .from("stock_batches")
+      .select("supplier_id, suppliers ( supplier_name )")
+      .eq("company_id", companyId)
+      .eq("powder_id", powder.id)
+      .gt("qty_remaining", 0)
+      .then(({ data }) => {
+        if (!data || data.length === 0) {
+          setSuppliers([]);
+          setSupplier(null);
+          return;
+        }
+
+        const map = new Map<string, string>();
+        data.forEach((r: any) => {
+          const name = r.suppliers?.supplier_name?.trim();
+          if (name && r.supplier_id) map.set(r.supplier_id, name);
+        });
+
+        const options = Array.from(map.entries()).map(([id, label]) => ({
+          id,
+          label,
+        }));
+
+        setSuppliers(options);
+        setSupplier(null);
+      });
+  }, [powder?.id, companyId, editingId, usageRows]);
+
+  useEffect(() => {
+    if (!companyId) return;
+
+    supabase
+      .from("clients")
+      .select("id, client_name")
+      .eq("company_id", companyId)
+      .order("client_name")
+      .then(({ data }) => {
+        if (data) {
+          setClients(
+            data.map((c) => ({
+              id: c.id,
+              label: c.client_name.trim(),
+            }))
+          );
+        }
+      });
+  }, [companyId]);
+
   const startEdit = (row: UsageRow) => {
     setEditingId(row.id);
     setQty(row.qty.toString());
@@ -214,6 +210,8 @@ supabase
     supplierId: string,
     quantity: number
   ) => {
+    if (!companyId) return;
+
     let remaining = quantity;
     let totalCost = 0;
 
@@ -255,6 +253,11 @@ supabase
   };
 
   const saveUsage = async () => {
+    if (!companyId) {
+      alert("No company selected or session invalid. Please log in again.");
+      return;
+    }
+
     if (!powder || !supplier || !client || !qty.trim()) {
       alert("All fields are required");
       return;
@@ -304,7 +307,7 @@ supabase
             supplier_id: supplier.id,
             client_id: client.id,
             quantity_kg: quantity,
-            created_by: session.userId ?? undefined,
+            created_by: session?.userId ?? undefined,
           })
           .select()
           .single();
@@ -358,6 +361,24 @@ supabase
       alert("Failed to cancel usage");
     }
   };
+
+  // ---- Rendering guards come AFTER all hooks above, never before ----
+
+  if (sessionLoading) {
+    return (
+      <div className="p-6 text-center text-gray-500">
+        Loading session...
+      </div>
+    );
+  }
+
+  if (!session || !companyId) {
+    return (
+      <div className="p-6 text-center text-red-600 font-medium">
+        No company selected or session invalid. Please log in again.
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 md:p-6 space-y-6">
