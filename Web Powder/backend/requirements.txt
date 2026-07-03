@@ -5,3 +5,5 @@ postgrest
 supabase
 reportlab
 matplotlib
+requests
+python-dateutil
