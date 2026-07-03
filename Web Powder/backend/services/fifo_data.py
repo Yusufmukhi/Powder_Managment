@@ -59,8 +59,8 @@ def get_fifo_data(company_id: str, start_dt: datetime, end_dt: datetime):
         rate = float(fifo.get("rate_per_kg", 0))
         cost = qty * rate
 
-        powder = usage.get("powders", {}).get("powder_name", "Unknown Powder")
-        supplier = usage.get("suppliers", {}).get("supplier_name", "Unknown Supplier")
+        powder = (usage.get("powders") or {}).get("powder_name", "Unknown Powder")
+        supplier = (usage.get("suppliers") or {}).get("supplier_name", "Unknown Supplier")
 
         used_at_str = usage.get("used_at")
         if not used_at_str:
