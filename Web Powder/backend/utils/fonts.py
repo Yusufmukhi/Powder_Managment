@@ -3,14 +3,18 @@ import os
 
 def get_font_path(filename: str) -> str:
     # Try multiple strategies so it works in dev + Render + different imports
+    this_dir = os.path.dirname(os.path.abspath(__file__))          # .../backend/utils
+    backend_dir = os.path.dirname(this_dir)                        # .../backend
+
     base_candidates = [
-        # Most reliable: relative to this file's directory (recommended)
-        os.path.dirname(os.path.abspath(__file__)),
-        
-        # Project root assuming standard structure
-        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")),
-        
-        # Current working dir fallback (less reliable)
+        # Correct location: backend/assets/fonts (this file lives in backend/utils)
+        backend_dir,
+
+        # Fallback: same directory as this file (in case fonts get moved here)
+        this_dir,
+
+        # Current working dir fallback (least reliable — depends on how the
+        # process was launched, e.g. Render's start command / root directory)
         os.getcwd(),
     ]
 
