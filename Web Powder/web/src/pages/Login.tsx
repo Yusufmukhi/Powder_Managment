@@ -28,13 +28,14 @@ export default function Login() {
     try {
       const res = await loginUser(username.trim(), password);
 
-      // Save session with fullName
+      // Save session with fullName + the server-issued session token
       setSession({
         userId: res.userId,
         companyId: res.companyId,
         username: res.username || username.trim(),
         role: res.role,
         fullName: res.fullName || "", // will show in Settings now
+        sessionToken: res.sessionToken,
       });
 
       navigate("/");
