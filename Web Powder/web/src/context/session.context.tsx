@@ -9,6 +9,7 @@ export type Session = {
   username: string | null;
   role: Role | null;
   fullName: string;          // camelCase in JS/TS
+  sessionToken?: string;     // server-issued token from the login function
 };
 
 export type SessionContextType = {
