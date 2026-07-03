@@ -1,4 +1,3 @@
-
 from datetime import datetime, timedelta
 from collections import defaultdict
 import os
@@ -187,6 +186,19 @@ def generate_monthly_pdf(company_id: str, year: int, month: int) -> str:
     story = []
 
     # ────────────────────────────────────────────────
+    # Company info - fetched early so it's available in
+    # BOTH the "no data" and "full report" branches below.
+    # ────────────────────────────────────────────────
+    company = supabase.table("companies") \
+        .select("company_name, director") \
+        .eq("id", company_id) \
+        .single() \
+        .execute()
+
+    company_name = company.data.get("company_name", "Company")
+    director_name = company.data.get("director", "Director")
+
+    # ────────────────────────────────────────────────
     # Early check: is there any data for this month?
     # ────────────────────────────────────────────────
     curr_start = datetime(year, month, 1)
@@ -272,15 +284,7 @@ def generate_monthly_pdf(company_id: str, year: int, month: int) -> str:
         if curr_cost > 0 else 0
     )
 
-    # Company info
-    company = supabase.table("companies") \
-        .select("company_name, director") \
-        .eq("id", company_id) \
-        .single() \
-        .execute()
-
-    company_name = company.data.get("company_name", "Company")
-    director_name = company.data.get("director", "Director")
+    # Company info fetched earlier (before the has_data check)
 
     month_str = curr_start.strftime("%B %Y")
 
@@ -355,4 +359,3 @@ def generate_monthly_pdf(company_id: str, year: int, month: int) -> str:
     doc.build(story, onFirstPage=footer, onLaterPages=footer)
 
     return pdf_path
-
